@@ -11,7 +11,12 @@ data class BotSettings(
     val systemInstruction: String = "Anda adalah asisten AI Telegram yang ramah dan siap membantu menjawab semua pertanyaan.",
     val botUsername: String = "",
     val botFirstName: String = "",
-    val isBotRunning: Boolean = false
+    val isBotRunning: Boolean = false,
+    
+    // Tokopay Integration Fields
+    val tokopayMerchantId: String = "",
+    val tokopaySecretKey: String = "",
+    val tokopayIsActive: Boolean = false
 )
 
 @Entity(tableName = "bot_logs")

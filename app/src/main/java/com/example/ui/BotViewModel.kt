@@ -10,6 +10,15 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
+data class TokopayInvoice(
+    val refId: String,
+    val amount: Int,
+    val paymentMethod: String,
+    val status: String, // PENDING, PAID
+    val payUrl: String,
+    val qrUrl: String
+)
+
 class BotViewModel(private val repository: BotRepository) : ViewModel() {
 
     private val _isBotRunning = MutableStateFlow(false)
@@ -29,6 +38,20 @@ class BotViewModel(private val repository: BotRepository) : ViewModel() {
 
     private val _isPlaygroundLoading = MutableStateFlow(false)
     val isPlaygroundLoading: StateFlow<Boolean> = _isPlaygroundLoading.asStateFlow()
+
+    // Admin Auth State
+    private val _isAdminLoggedIn = MutableStateFlow(false)
+    val isAdminLoggedIn: StateFlow<Boolean> = _isAdminLoggedIn.asStateFlow()
+
+    private val _loginError = MutableStateFlow<String?>(null)
+    val loginError: StateFlow<String?> = _loginError.asStateFlow()
+
+    // Tokopay Invoice State
+    private val _tokopayInvoiceState = MutableStateFlow<TokopayInvoice?>(null)
+    val tokopayInvoiceState: StateFlow<TokopayInvoice?> = _tokopayInvoiceState.asStateFlow()
+
+    private val _isTokopayLoading = MutableStateFlow(false)
+    val isTokopayLoading: StateFlow<Boolean> = _isTokopayLoading.asStateFlow()
 
     val settingsState: StateFlow<BotSettings> = repository.settingsFlow
         .map { it ?: BotSettings() }
@@ -280,6 +303,105 @@ class BotViewModel(private val repository: BotRepository) : ViewModel() {
             } finally {
                 _isPlaygroundLoading.value = false
             }
+        }
+    }
+
+    /**
+     * Admin Log-In Verification Flow
+     */
+    fun loginAdmin(email: String, password: String): Boolean {
+        _loginError.value = null
+        val trimmedEmail = email.trim()
+        val trimmedPassword = password.trim()
+        
+        if (trimmedEmail == "rizakontol@kontol.my.id" && trimmedPassword == "rizakontol") {
+            _isAdminLoggedIn.value = true
+            _loginError.value = null
+            viewModelScope.launch {
+                repository.addLog("SUCCESS", "Admin Login Berhasil: Masuk sebagai rizakontol@kontol.my.id")
+            }
+            return true
+        } else {
+            _loginError.value = "Email atau Password salah! Periksa kembali kredensial Anda."
+            viewModelScope.launch {
+                repository.addLog("ERROR", "Percobaan Admin Login Gagal untuk email: $trimmedEmail")
+            }
+            return false
+        }
+    }
+
+    /**
+     * Terminate Admin Session Flow
+     */
+    fun logoutAdmin() {
+        _isAdminLoggedIn.value = false
+        _loginError.value = null
+        viewModelScope.launch {
+            repository.addLog("INFO", "Sesi administrator diakhiri (Logout).")
+        }
+    }
+
+    /**
+     * Save Tokopay Gateway configurations (EXCLUSIVE TO ADMIN)
+     */
+    fun saveTokopaySettings(
+        merchantId: String,
+        secretKey: String,
+        isActive: Boolean
+    ) {
+        viewModelScope.launch {
+            val current = settingsState.value
+            val updated = current.copy(
+                tokopayMerchantId = merchantId.trim(),
+                tokopaySecretKey = secretKey.trim(),
+                tokopayIsActive = isActive
+            )
+            repository.saveSettings(updated)
+            repository.addLog("SUCCESS", "Konfigurasi Tokopay berhasil disimpan oleh Admin. Status keaktifan: ${if (isActive) "AKTIF" else "NONAKTIF"}")
+        }
+    }
+
+    /**
+     * Request simulated Tokopay invoice/payment link creation
+     */
+    fun createTokopayInvoice(amount: Int, paymentMethod: String) {
+        if (amount <= 0) return
+        _isTokopayLoading.value = true
+        _tokopayInvoiceState.value = null
+        viewModelScope.launch {
+            delay(1000) // Simulating network lag
+            val refId = "TP-" + System.currentTimeMillis().toString().takeLast(6)
+            val invoiceUrl = "https://tokopay.id/bill/$refId"
+            
+            // Dynamic Indonesia standard QRIS simulation URL
+            val qrCodeSimUrl = "https://api.qrserver.com/v1/create-qr-code/?size=350x350&data=00020101021226300010ID.CO.QRIS.WWW02041234567803030005204000053033605405${amount}5802ID5908Tokopay6009Jakarta61051234562070703030006304"
+            
+            val invoice = TokopayInvoice(
+                refId = refId,
+                amount = amount,
+                paymentMethod = paymentMethod,
+                status = "PENDING",
+                payUrl = invoiceUrl,
+                qrUrl = qrCodeSimUrl
+            )
+            _tokopayInvoiceState.value = invoice
+            _isTokopayLoading.value = false
+            repository.addLog("SUCCESS", "Tokopay API: Invoice $refId sebesar Rp $amount berhasil diterbitkan via $paymentMethod.")
+        }
+    }
+
+    /**
+     * Simulate an incoming Webhook notification from Tokopay verifying payment success
+     */
+    fun simulatePaymentSuccess() {
+        val currentInvoice = _tokopayInvoiceState.value ?: return
+        _isTokopayLoading.value = true
+        viewModelScope.launch {
+            delay(1000)
+            val updated = currentInvoice.copy(status = "PAID")
+            _tokopayInvoiceState.value = updated
+            _isTokopayLoading.value = false
+            repository.addLog("SUCCESS", "Tokopay Webhook: Pembayaran Invoice ${currentInvoice.refId} sebesar Rp ${currentInvoice.amount} terverifikasi LUNAS (PAID)!")
         }
     }
 
