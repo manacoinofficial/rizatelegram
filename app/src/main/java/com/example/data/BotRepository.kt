@@ -127,6 +127,8 @@ class BotRepository(private val botDao: BotDao) {
             val code = e.code()
             if (code == 429) {
                 throw Exception("Gemini API Error: HTTPS 429 (Too Many Requests / Batas Limit Terlampaui). Harap tunggu beberapa saat atau ganti API Key Anda di menu Pengaturan.")
+            } else if (code == 401) {
+                throw Exception("Gemini API Error: HTTPS 401 (Tidak Diizinkan). API Key Gemini Anda tidak valid atau telah kedaluwarsa. Silakan periksa kembali dan ganti API Key Anda di menu Pengaturan.")
             } else {
                 throw Exception("Gemini API Error: HTTP $code - ${e.message() ?: "Error terjadi pada server Google"}")
             }
@@ -134,6 +136,8 @@ class BotRepository(private val botDao: BotDao) {
             val message = e.localizedMessage ?: e.message ?: "Unknown error"
             if (message.contains("429")) {
                 throw Exception("Gemini API Error: HTTPS 429 (Too Many Requests / Batas Limit Terlampaui). Harap tunggu beberapa saat atau ganti API Key Anda di menu Pengaturan.")
+            } else if (message.contains("401") || message.contains("Unauthorized", ignoreCase = true)) {
+                throw Exception("Gemini API Error: HTTPS 401 (Tidak Diizinkan). API Key Gemini Anda tidak valid atau telah kedaluwarsa. Silakan periksa kembali dan ganti API Key Anda di menu Pengaturan.")
             }
             throw Exception("Gemini API Error: $message")
         }

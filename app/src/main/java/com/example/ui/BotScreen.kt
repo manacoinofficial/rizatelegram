@@ -580,7 +580,7 @@ fun DashboardTab(
                             }
 
                             Button(
-                                onClick = { viewModel.toggleBotState() },
+                                onClick = { viewModel.toggleBotState(context) },
                                 colors = ButtonDefaults.buttonColors(
                                     containerColor = if (isRunning) CyberError else CyberPrimary,
                                     contentColor = Color.White
