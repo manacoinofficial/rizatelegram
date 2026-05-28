@@ -15,6 +15,7 @@ data class BotSettings(
     
     // Tokopay Integration Fields
     val tokopayMerchantId: String = "",
+    val tokopayApiKey: String = "",
     val tokopaySecretKey: String = "",
     val tokopayIsActive: Boolean = false
 )

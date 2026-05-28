@@ -37,6 +37,10 @@ class BotViewModel(private val repository: BotRepository) : ViewModel() {
     private val _isAdminLoggedIn = MutableStateFlow(false)
     val isAdminLoggedIn: StateFlow<Boolean> = _isAdminLoggedIn.asStateFlow()
 
+    // User Auth State
+    private val _isUserLoggedIn = MutableStateFlow(false)
+    val isUserLoggedIn: StateFlow<Boolean> = _isUserLoggedIn.asStateFlow()
+
     private val _loginError = MutableStateFlow<String?>(null)
     val loginError: StateFlow<String?> = _loginError.asStateFlow()
 
@@ -196,6 +200,10 @@ class BotViewModel(private val repository: BotRepository) : ViewModel() {
         }
     }
 
+    fun clearLoginError() {
+        _loginError.value = null
+    }
+
     /**
      * Admin Log-In Verification Flow
      */
@@ -206,13 +214,14 @@ class BotViewModel(private val repository: BotRepository) : ViewModel() {
         
         if (trimmedEmail == "rizakontol@kontol.my.id" && trimmedPassword == "rizakontol") {
             _isAdminLoggedIn.value = true
+            _isUserLoggedIn.value = false // Ensure exclusive
             _loginError.value = null
             viewModelScope.launch {
                 repository.addLog("SUCCESS", "Admin Login Berhasil: Masuk sebagai rizakontol@kontol.my.id")
             }
             return true
         } else {
-            _loginError.value = "Email atau Password salah! Periksa kembali kredensial Anda."
+            _loginError.value = "Email atau Password Admin salah! Periksa kembali kredensial Anda."
             viewModelScope.launch {
                 repository.addLog("ERROR", "Percobaan Admin Login Gagal untuk email: $trimmedEmail")
             }
@@ -232,10 +241,48 @@ class BotViewModel(private val repository: BotRepository) : ViewModel() {
     }
 
     /**
+     * User Log-In Verification Flow
+     */
+    fun loginUser(email: String, password: String): Boolean {
+        _loginError.value = null
+        val trimmedEmail = email.trim()
+        val trimmedPassword = password.trim()
+        
+        if ((trimmedEmail == "userkontol@kontol.my.id" && trimmedPassword == "userkontol") || 
+            (trimmedEmail == "user@gmail.com" && trimmedPassword == "user123")) {
+            _isUserLoggedIn.value = true
+            _isAdminLoggedIn.value = false // Ensure exclusive
+            _loginError.value = null
+            viewModelScope.launch {
+                repository.addLog("SUCCESS", "User Login Berhasil: Masuk sebagai $trimmedEmail")
+            }
+            return true
+        } else {
+            _loginError.value = "Email atau Password User salah! Periksa kembali kredensial Anda."
+            viewModelScope.launch {
+                repository.addLog("ERROR", "Percobaan User Login Gagal untuk email: $trimmedEmail")
+            }
+            return false
+        }
+    }
+
+    /**
+     * Terminate User Session Flow
+     */
+    fun logoutUser() {
+        _isUserLoggedIn.value = false
+        _loginError.value = null
+        viewModelScope.launch {
+            repository.addLog("INFO", "Sesi User diakhiri (Logout).")
+        }
+    }
+
+    /**
      * Save Tokopay Gateway configurations (EXCLUSIVE TO ADMIN)
      */
     fun saveTokopaySettings(
         merchantId: String,
+        apiKey: String,
         secretKey: String,
         isActive: Boolean
     ) {
@@ -243,6 +290,7 @@ class BotViewModel(private val repository: BotRepository) : ViewModel() {
             val current = settingsState.value
             val updated = current.copy(
                 tokopayMerchantId = merchantId.trim(),
+                tokopayApiKey = apiKey.trim(),
                 tokopaySecretKey = secretKey.trim(),
                 tokopayIsActive = isActive
             )

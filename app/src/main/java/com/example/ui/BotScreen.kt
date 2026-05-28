@@ -256,6 +256,7 @@ fun DashboardTab(
     settingsInstruction: String
 ) {
     val isAdminLoggedIn by viewModel.isAdminLoggedIn.collectAsStateWithLifecycle()
+    val isUserLoggedIn by viewModel.isUserLoggedIn.collectAsStateWithLifecycle()
     val loginError by viewModel.loginError.collectAsStateWithLifecycle()
     val tokopayInvoice by viewModel.tokopayInvoiceState.collectAsStateWithLifecycle()
     val isTokopayLoading by viewModel.isTokopayLoading.collectAsStateWithLifecycle()
@@ -263,8 +264,9 @@ fun DashboardTab(
 
     val context = LocalContext.current
 
-    if (!isAdminLoggedIn) {
+    if (!isAdminLoggedIn && !isUserLoggedIn) {
         // --- GUEST STATE / LOGIN PAGE ---
+        var isLoginForAdmin by remember { mutableStateOf(false) } // Default to user login
         var emailInput by remember { mutableStateOf("") }
         var passwordInput by remember { mutableStateOf("") }
         var passwordVisible by remember { mutableStateOf(false) }
@@ -286,27 +288,73 @@ fun DashboardTab(
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Lock,
-                        contentDescription = "Lock",
+                        imageVector = if (isLoginForAdmin) Icons.Default.Lock else Icons.Default.Person,
+                        contentDescription = "Portal Icon",
                         tint = CyberPrimary,
                         modifier = Modifier.size(40.dp)
                     )
                 }
                 Spacer(modifier = Modifier.height(12.dp))
                 Text(
-                    "Administrator Portal",
+                    text = if (isLoginForAdmin) "Portal Administrator" else "Portal User",
                     fontWeight = FontWeight.ExtraBold,
                     fontSize = 20.sp,
                     color = CyberTextPrimary,
                     fontFamily = FontFamily.SansSerif
                 )
                 Text(
-                    "Autentikasi diperlukan untuk konfigurasi sistem & Tokopay",
+                    text = if (isLoginForAdmin) 
+                        "Autentikasi khusus untuk konfigurasi API Telegram, API Gemini, dan Merchant Tokopay." 
+                        else "Masuk ke Dashboard Panel untuk memantau status server bot AI Anda.",
                     fontSize = 12.sp,
                     color = CyberTextSecondary,
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                     modifier = Modifier.padding(horizontal = 24.dp)
                 )
+            }
+
+            // Tab Selector Row to separate User and Admin Logins
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Button(
+                        onClick = {
+                            isLoginForAdmin = false
+                            emailInput = ""
+                            passwordInput = ""
+                            viewModel.clearLoginError()
+                        },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (!isLoginForAdmin) CyberPrimary else CyberSurface,
+                            contentColor = if (!isLoginForAdmin) Color.White else CyberTextPrimary
+                        ),
+                        border = BorderStroke(1.dp, if (!isLoginForAdmin) CyberPrimary else CyberCardBorder),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text("LOGIN USER", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+
+                    Button(
+                        onClick = {
+                            isLoginForAdmin = true
+                            emailInput = ""
+                            passwordInput = ""
+                            viewModel.clearLoginError()
+                        },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (isLoginForAdmin) CyberPrimary else CyberSurface,
+                            contentColor = if (isLoginForAdmin) Color.White else CyberTextPrimary
+                        ),
+                        border = BorderStroke(1.dp, if (isLoginForAdmin) CyberPrimary else CyberCardBorder),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text("LOGIN ADMIN", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
             }
 
             item {
@@ -320,7 +368,7 @@ fun DashboardTab(
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
                         Text(
-                            "Masuk sebagai Admin",
+                            text = if (isLoginForAdmin) "Masuk sebagai Admin" else "Masuk sebagai User",
                             fontWeight = FontWeight.Bold,
                             fontSize = 15.sp,
                             color = CyberPrimary
@@ -330,8 +378,8 @@ fun DashboardTab(
                         OutlinedTextField(
                             value = emailInput,
                             onValueChange = { emailInput = it },
-                            label = { Text("Email Admin") },
-                            placeholder = { Text("rizakontol@kontol.my.id") },
+                            label = { Text(if (isLoginForAdmin) "Email Admin" else "Email User") },
+                            placeholder = { Text(if (isLoginForAdmin) "admin@gmail.com" else "user@gmail.com") },
                             leadingIcon = {
                                 Icon(
                                     imageVector = Icons.Default.Person,
@@ -342,7 +390,7 @@ fun DashboardTab(
                             singleLine = true,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .testTag("admin_email_input"),
+                                .testTag("login_email_input"),
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedBorderColor = CyberPrimary,
                                 unfocusedBorderColor = CyberCardBorder,
@@ -357,7 +405,8 @@ fun DashboardTab(
                         OutlinedTextField(
                             value = passwordInput,
                             onValueChange = { passwordInput = it },
-                            label = { Text("Password Admin") },
+                            label = { Text(if (isLoginForAdmin) "Password Admin" else "Password User") },
+                            placeholder = { Text("••••••••") },
                             leadingIcon = {
                                 Icon(
                                     imageVector = Icons.Default.Lock,
@@ -377,7 +426,7 @@ fun DashboardTab(
                             singleLine = true,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .testTag("admin_password_input"),
+                                .testTag("login_password_input"),
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedBorderColor = CyberPrimary,
                                 unfocusedBorderColor = CyberCardBorder,
@@ -388,48 +437,42 @@ fun DashboardTab(
                             )
                         )
 
-                        // Submit Row
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            // Convenience Autobutton
-                            OutlinedButton(
-                                onClick = {
-                                    emailInput = "rizakontol@kontol.my.id"
-                                    passwordInput = "rizakontol"
-                                    Toast.makeText(context, "Kredensial Pengujian Terisi!", Toast.LENGTH_SHORT).show()
-                                },
-                                modifier = Modifier.weight(1f),
-                                border = BorderStroke(1.dp, CyberSecondary),
-                                shape = RoundedCornerShape(8.dp),
-                                colors = ButtonDefaults.outlinedButtonColors(contentColor = CyberSecondary)
-                            ) {
-                                Text("Isi Otomatis", fontSize = 12.sp)
-                            }
-
-                            Button(
-                                onClick = {
+                        // Submit action button list
+                        Button(
+                            onClick = {
+                                if (isLoginForAdmin) {
                                     val success = viewModel.loginAdmin(emailInput, passwordInput)
                                     if (success) {
                                         Toast.makeText(context, "Login Berhasil! Selamat datang Admin.", Toast.LENGTH_SHORT).show()
                                     } else {
                                         Toast.makeText(context, "Gagal Login. Periksa Input!", Toast.LENGTH_SHORT).show()
                                     }
-                                },
-                                modifier = Modifier
-                                    .weight(1.2f)
-                                    .testTag("admin_login_submit_button"),
-                                shape = RoundedCornerShape(8.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = CyberPrimary, contentColor = Color.White)
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                ) {
-                                    Icon(Icons.Default.Check, contentDescription = "Sign In", modifier = Modifier.size(16.dp))
-                                    Text("MASUK ADMIN", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                } else {
+                                    val success = viewModel.loginUser(emailInput, passwordInput)
+                                    if (success) {
+                                        Toast.makeText(context, "Login Berhasil! Selamat datang User.", Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        Toast.makeText(context, "Gagal Login. Periksa Input!", Toast.LENGTH_SHORT).show()
+                                    }
                                 }
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp)
+                                .testTag("login_submit_button"),
+                            shape = RoundedCornerShape(8.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = CyberPrimary, contentColor = Color.White)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Icon(Icons.Default.Check, contentDescription = "Sign In", modifier = Modifier.size(16.dp))
+                                Text(
+                                    text = if (isLoginForAdmin) "MASUK SEBAGAI ADMIN" else "MASUK SEBAGAI USER", 
+                                    fontSize = 11.sp, 
+                                    fontWeight = FontWeight.Bold
+                                )
                             }
                         }
 
@@ -454,37 +497,9 @@ fun DashboardTab(
                     }
                 }
             }
-
-            item {
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = CyberSurfaceVariant),
-                    border = BorderStroke(1.dp, CyberCardBorder),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(
-                        modifier = Modifier.padding(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Icon(Icons.Default.Info, contentDescription = "Info", tint = CyberSecondary, modifier = Modifier.size(16.dp))
-                            Text("Kredensial Akun Admin Pengujian:", fontWeight = FontWeight.Bold, color = CyberTextPrimary, fontSize = 12.sp)
-                        }
-                        Text(
-                            "Email: rizakontol@kontol.my.id\nPassword: rizakontol", 
-                            fontFamily = FontFamily.Monospace, 
-                            color = CyberSecondary, 
-                            fontSize = 11.sp,
-                            modifier = Modifier.padding(horizontal = 22.dp)
-                        )
-                    }
-                }
-            }
         }
     } else {
-        // --- ADMIN AUTHORIZED STATE ---
+        // --- AUTHORIZED STATE (ADMIN OR USER) ---
         var localToken by remember(settingsToken) { mutableStateOf(settingsToken) }
         var localGeminiKey by remember(settingsGeminiKey) { mutableStateOf(settingsGeminiKey) }
         var localInstruction by remember(settingsInstruction) { mutableStateOf(settingsInstruction) }
@@ -494,8 +509,10 @@ fun DashboardTab(
 
         // Local states for Tokopay CONFIG
         var tokopayMerchant by remember(settings.tokopayMerchantId) { mutableStateOf(settings.tokopayMerchantId) }
+        var tokopayApiKeyInput by remember(settings.tokopayApiKey) { mutableStateOf(settings.tokopayApiKey) }
         var tokopaySecret by remember(settings.tokopaySecretKey) { mutableStateOf(settings.tokopaySecretKey) }
         var tokopayActive by remember(settings.tokopayIsActive) { mutableStateOf(settings.tokopayIsActive) }
+        var tokopayApiKeyObscured by remember { mutableStateOf(true) }
         var tokopaySecretObscured by remember { mutableStateOf(true) }
 
         // Local states for Invoice TESTER
@@ -509,13 +526,17 @@ fun DashboardTab(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Active Admin Session Bar
+            // Active Session Bar (User / Admin)
             item {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .background(CyberSurface, RoundedCornerShape(8.dp))
-                        .border(1.dp, CyberPrimary.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
+                        .border(
+                            1.dp, 
+                            if (isAdminLoggedIn) CyberPrimary.copy(alpha = 0.5f) else CyberSecondary.copy(alpha = 0.5f), 
+                            RoundedCornerShape(8.dp)
+                        )
                         .padding(horizontal = 12.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
@@ -528,10 +549,10 @@ fun DashboardTab(
                             modifier = Modifier
                                 .size(8.dp)
                                 .clip(CircleShape)
-                                .background(CyberPrimary)
+                                .background(if (isAdminLoggedIn) CyberPrimary else CyberSecondary)
                         )
                         Text(
-                            text = "Admin: rizakontol@kontol.my.id",
+                            text = if (isAdminLoggedIn) "Admin: rizakontol@kontol.my.id" else "User: Mode Monitoring",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold,
                             color = CyberTextPrimary
@@ -539,7 +560,13 @@ fun DashboardTab(
                     }
 
                     TextButton(
-                        onClick = { viewModel.logoutAdmin() },
+                        onClick = { 
+                            if (isAdminLoggedIn) {
+                                viewModel.logoutAdmin() 
+                            } else {
+                                viewModel.logoutUser() 
+                            }
+                        },
                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
                         colors = ButtonDefaults.textButtonColors(contentColor = CyberError)
                     ) {
@@ -642,13 +669,14 @@ fun DashboardTab(
                 }
             }
 
-            // Credentials Config Card (Original)
-            item {
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = CyberSurface),
-                    border = BorderStroke(1.dp, CyberCardBorder),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
+            if (isAdminLoggedIn) {
+                // Credentials Config Card (Original)
+                item {
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = CyberSurface),
+                        border = BorderStroke(1.dp, CyberCardBorder),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
                     Column(
                         modifier = Modifier.padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -803,13 +831,13 @@ fun DashboardTab(
                 }
             }
 
-            // TOKOPAY GATEWAY CONFIGURATION CARD (EXCLUSIVELY MANAGED BY ADMIN)
-            item {
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = CyberSurface),
-                    border = BorderStroke(1.dp, CyberCardBorder),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
+                // TOKOPAY GATEWAY CONFIGURATION CARD (EXCLUSIVELY MANAGED BY ADMIN)
+                item {
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = CyberSurface),
+                        border = BorderStroke(1.dp, CyberCardBorder),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
                     Column(
                         modifier = Modifier.padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(14.dp)
@@ -865,12 +893,48 @@ fun DashboardTab(
                             )
                         )
 
+                        // API Key Input (New Field)
+                        OutlinedTextField(
+                            value = tokopayApiKeyInput,
+                            onValueChange = { tokopayApiKeyInput = it },
+                            label = { Text("API Key Tokopay") },
+                            placeholder = { Text("Masukkan API Key Tokopay Anda") },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Default.Lock,
+                                    contentDescription = "API Key Icon",
+                                    tint = CyberTextSecondary
+                                )
+                            },
+                            trailingIcon = {
+                                IconButton(onClick = { tokopayApiKeyObscured = !tokopayApiKeyObscured }) {
+                                    Icon(
+                                        imageVector = if (tokopayApiKeyObscured) Icons.Default.Lock else Icons.Default.Refresh,
+                                        contentDescription = "Toggle API Key view"
+                                    )
+                                }
+                            },
+                            visualTransformation = if (tokopayApiKeyObscured) PasswordVisualTransformation() else VisualTransformation.None,
+                            singleLine = true,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("tokopay_api_key_input"),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = CyberSecondary,
+                                unfocusedBorderColor = CyberCardBorder,
+                                focusedLabelColor = CyberSecondary,
+                                unfocusedLabelColor = CyberTextSecondary,
+                                focusedTextColor = CyberTextPrimary,
+                                unfocusedTextColor = CyberTextPrimary
+                            )
+                        )
+
                         // Secret Key Input
                         OutlinedTextField(
                             value = tokopaySecret,
                             onValueChange = { tokopaySecret = it },
-                            label = { Text("Secret / API Key Tokopay") },
-                            placeholder = { Text("Masukkan secret key rahasia") },
+                            label = { Text("Secret Key Tokopay") },
+                            placeholder = { Text("Masukkan Secret Key rahasia Tokopay") },
                             leadingIcon = {
                                 Icon(
                                     imageVector = Icons.Default.Lock,
@@ -939,7 +1003,12 @@ fun DashboardTab(
                         // Save Tokopay settings button
                         Button(
                             onClick = {
-                                viewModel.saveTokopaySettings(tokopayMerchant, tokopaySecret, tokopayActive)
+                                viewModel.saveTokopaySettings(
+                                    tokopayMerchant, 
+                                    tokopayApiKeyInput, 
+                                    tokopaySecret, 
+                                    tokopayActive
+                                )
                                 Toast.makeText(context, "Setelan Tokopay tersimpan!", Toast.LENGTH_SHORT).show()
                             },
                             shape = RoundedCornerShape(8.dp),
@@ -952,6 +1021,42 @@ fun DashboardTab(
                             Icon(imageVector = Icons.Default.Check, contentDescription = "Simpan", modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(6.dp))
                             Text("SIMPAN KONFIGURASI TOKOPAY", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        }
+                    }
+                }
+            }
+            } else {
+                // Show Mode User lock message
+                item {
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = CyberSurface),
+                        border = BorderStroke(1.dp, CyberCardBorder),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Lock,
+                                contentDescription = "Terkunci",
+                                tint = CyberSecondary,
+                                modifier = Modifier.size(40.dp)
+                            )
+                            Text(
+                                "Fitur Terkunci (Mode User)",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 15.sp,
+                                color = CyberPrimary
+                            )
+                            Text(
+                                "Pengaturan kredensial Bot Telegram, API Key Gemini, dan konfigurasi API/Secret merchant Tokopay dilindungi dan hanya dapat diubah oleh Administrator.",
+                                fontSize = 12.sp,
+                                color = CyberTextSecondary,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                modifier = Modifier.padding(horizontal = 16.dp)
+                            )
                         }
                     }
                 }
