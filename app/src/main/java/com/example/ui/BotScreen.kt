@@ -498,7 +498,7 @@ fun DashboardTab(
         var tokopayActive by remember(settings.tokopayIsActive) { mutableStateOf(settings.tokopayIsActive) }
         var tokopaySecretObscured by remember { mutableStateOf(true) }
 
-        // Local states for Invoice SIMULATOR
+        // Local states for Invoice TESTER
         var simAmount by remember { mutableStateOf("15000") }
         var selectedMethod by remember { mutableStateOf("QRIS") }
         val paymentMethods = listOf("QRIS", "Virtual Account Mandiri", "Virtual Account BCA")
@@ -957,7 +957,7 @@ fun DashboardTab(
                 }
             }
 
-            // TOKOPAY INSTANT INVOICE GENERATOR & WEBHOOK SIMULATOR CARD
+            // TOKOPAY INSTANT INVOICE GENERATOR & WEBHOOK TESTER CARD
             item {
                 Card(
                     colors = CardDefaults.cardColors(containerColor = CyberSurface),
@@ -1181,7 +1181,7 @@ fun DashboardTab(
                                     // Webhook test pay button
                                     if (tokopayInvoice!!.status == "PENDING") {
                                         Button(
-                                            onClick = { viewModel.simulatePaymentSuccess() },
+                                            onClick = { viewModel.triggerPaymentSuccessCallback() },
                                             modifier = Modifier
                                                 .fillMaxWidth()
                                                 .testTag("tokopay_test_pay_button"),

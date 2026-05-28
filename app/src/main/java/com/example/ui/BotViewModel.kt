@@ -362,18 +362,18 @@ class BotViewModel(private val repository: BotRepository) : ViewModel() {
     }
 
     /**
-     * Request simulated Tokopay invoice/payment link creation
+     * Request mock Tokopay invoice/payment link creation
      */
     fun createTokopayInvoice(amount: Int, paymentMethod: String) {
         if (amount <= 0) return
         _isTokopayLoading.value = true
         _tokopayInvoiceState.value = null
         viewModelScope.launch {
-            delay(1000) // Simulating network lag
+            delay(1000) // Mock network lag
             val refId = "TP-" + System.currentTimeMillis().toString().takeLast(6)
             val invoiceUrl = "https://tokopay.id/bill/$refId"
             
-            // Dynamic Indonesia standard QRIS simulation URL
+            // Dynamic Indonesia standard QRIS mock URL
             val qrCodeSimUrl = "https://api.qrserver.com/v1/create-qr-code/?size=350x350&data=00020101021226300010ID.CO.QRIS.WWW02041234567803030005204000053033605405${amount}5802ID5908Tokopay6009Jakarta61051234562070703030006304"
             
             val invoice = TokopayInvoice(
@@ -391,9 +391,9 @@ class BotViewModel(private val repository: BotRepository) : ViewModel() {
     }
 
     /**
-     * Simulate an incoming Webhook notification from Tokopay verifying payment success
+     * Trigger an incoming Webhook notification from Tokopay verifying payment success
      */
-    fun simulatePaymentSuccess() {
+    fun triggerPaymentSuccessCallback() {
         val currentInvoice = _tokopayInvoiceState.value ?: return
         _isTokopayLoading.value = true
         viewModelScope.launch {
