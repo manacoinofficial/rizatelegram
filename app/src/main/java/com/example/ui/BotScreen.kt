@@ -75,7 +75,7 @@ fun BotScreen(
                                 color = CyberTextPrimary
                             )
                             Text(
-                                "Integrasi Gemini AI & Telegram",
+                                "Integrasi Groq AI & Telegram",
                                 fontSize = 11.sp,
                                 color = CyberTextSecondary
                             )
@@ -158,7 +158,7 @@ fun BotScreen(
                         botInfo = botInfo,
                         validationError = validationError,
                         settingsToken = settings.telegramToken,
-                        settingsGeminiKey = settings.geminiApiKey,
+                        settingsGroqKey = settings.groqApiKey,
                         settingsInstruction = settings.systemInstruction
                     )
                     1 -> LogsTab(
@@ -252,7 +252,7 @@ fun DashboardTab(
     botInfo: com.example.data.TelegramBotInfo?,
     validationError: String?,
     settingsToken: String,
-    settingsGeminiKey: String,
+    settingsGroqKey: String,
     settingsInstruction: String
 ) {
     val isAdminLoggedIn by viewModel.isAdminLoggedIn.collectAsStateWithLifecycle()
@@ -304,7 +304,7 @@ fun DashboardTab(
                 )
                 Text(
                     text = if (isLoginForAdmin) 
-                        "Autentikasi khusus untuk konfigurasi API Telegram, API Gemini, dan Merchant Tokopay." 
+                        "Autentikasi khusus untuk konfigurasi API Telegram, API Groq, dan Merchant Tokopay." 
                         else "Masuk ke Dashboard Panel untuk memantau status server bot AI Anda.",
                     fontSize = 12.sp,
                     color = CyberTextSecondary,
@@ -501,7 +501,7 @@ fun DashboardTab(
     } else {
         // --- AUTHORIZED STATE (ADMIN OR USER) ---
         var localToken by remember(settingsToken) { mutableStateOf(settingsToken) }
-        var localGeminiKey by remember(settingsGeminiKey) { mutableStateOf(settingsGeminiKey) }
+        var localGroqKey by remember(settingsGroqKey) { mutableStateOf(settingsGroqKey) }
         var localInstruction by remember(settingsInstruction) { mutableStateOf(settingsInstruction) }
 
         var tokenObscured by remember { mutableStateOf(true) }
@@ -682,7 +682,7 @@ fun DashboardTab(
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         Text(
-                            "Konfigurasi Kredensial Bot & Gemini",
+                            "Konfigurasi Kredensial Bot & Groq",
                             fontWeight = FontWeight.Bold,
                             fontSize = 15.sp,
                             color = CyberPrimary
@@ -717,15 +717,15 @@ fun DashboardTab(
                             )
                         )
 
-                        // Gemini Key
+                        // Groq Key
                         OutlinedTextField(
-                            value = localGeminiKey,
-                            onValueChange = { localGeminiKey = it },
-                            label = { Text("API Key Gemini AI") },
-                            placeholder = { Text("Menggunakan default AI Studio (Secrets)") },
+                            value = localGroqKey,
+                            onValueChange = { localGroqKey = it },
+                            label = { Text("API Key Groq AI") },
+                            placeholder = { Text("Masukkan API Key Groq") },
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .testTag("gemini_key_input"),
+                                .testTag("groq_key_input"),
                             visualTransformation = if (keyObscured) PasswordVisualTransformation() else VisualTransformation.None,
                             trailingIcon = {
                                 IconButton(onClick = { keyObscured = !keyObscured }) {
@@ -746,6 +746,115 @@ fun DashboardTab(
                             )
                         )
 
+                        // Groq Models Management UI
+                        HorizontalDivider(color = CyberCardBorder, thickness = 1.dp, modifier = Modifier.padding(vertical = 4.dp))
+                        
+                        Text(
+                            "Manajemen Model Groq AI",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp,
+                            color = CyberSecondary
+                        )
+
+                        val modelsList = settings.groqModels.split(",")
+                            .map { it.trim() }
+                            .filter { it.isNotEmpty() }
+
+                        Text(
+                            "Pilih Model Aktif:",
+                            fontSize = 12.sp,
+                            color = CyberTextSecondary
+                        )
+
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            modelsList.forEach { modelName ->
+                                val isSelected = settings.selectedModel.trim() == modelName
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(if (isSelected) CyberPrimary.copy(alpha = 0.15f) else Color.Transparent, RoundedCornerShape(6.dp))
+                                        .border(1.dp, if (isSelected) CyberPrimary else CyberCardBorder, RoundedCornerShape(6.dp))
+                                        .clickable { viewModel.selectModel(modelName) }
+                                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        RadioButton(
+                                            selected = isSelected,
+                                            onClick = { viewModel.selectModel(modelName) },
+                                            colors = RadioButtonDefaults.colors(selectedColor = CyberPrimary)
+                                        )
+                                        Text(
+                                            text = modelName,
+                                            fontSize = 13.sp,
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                            color = if (isSelected) CyberPrimary else CyberTextPrimary
+                                        )
+                                    }
+                                    
+                                    if (modelsList.size > 1) {
+                                        IconButton(
+                                            onClick = { viewModel.deleteGroqModel(modelName) },
+                                            modifier = Modifier.size(24.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Delete,
+                                                contentDescription = "Hapus Model $modelName",
+                                                tint = CyberError,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        var newModelInput by remember { mutableStateOf("") }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            OutlinedTextField(
+                                value = newModelInput,
+                                onValueChange = { newModelInput = it },
+                                label = { Text("Nama Model Baru") },
+                                placeholder = { Text("contoh: llama-3.3-70b") },
+                                modifier = Modifier.weight(1f),
+                                singleLine = true,
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = CyberPrimary,
+                                    unfocusedBorderColor = CyberCardBorder,
+                                    focusedLabelColor = CyberPrimary,
+                                    unfocusedLabelColor = CyberTextSecondary,
+                                    focusedTextColor = CyberTextPrimary,
+                                    unfocusedTextColor = CyberTextPrimary
+                                )
+                            )
+                            Button(
+                                onClick = {
+                                    if (newModelInput.isNotBlank()) {
+                                        viewModel.addGroqModel(newModelInput)
+                                        newModelInput = ""
+                                    }
+                                },
+                                shape = RoundedCornerShape(6.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = CyberSecondary),
+                                modifier = Modifier.height(56.dp)
+                            ) {
+                                Text("Tambah", color = Color.White, fontSize = 12.sp)
+                            }
+                        }
+                        
+                        HorizontalDivider(color = CyberCardBorder, thickness = 1.dp, modifier = Modifier.padding(vertical = 4.dp))
+
                         // Custom System instruction/Prompt styling
                         OutlinedTextField(
                             value = localInstruction,
@@ -757,12 +866,12 @@ fun DashboardTab(
                                 .heightIn(min = 80.dp),
                             maxLines = 5,
                             colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = CyberPrimary,
-                                unfocusedBorderColor = CyberCardBorder,
-                                focusedLabelColor = CyberPrimary,
-                                unfocusedLabelColor = CyberTextSecondary,
-                                focusedTextColor = CyberTextPrimary,
-                                unfocusedTextColor = CyberTextPrimary
+                                    focusedBorderColor = CyberPrimary,
+                                    unfocusedBorderColor = CyberCardBorder,
+                                    focusedLabelColor = CyberPrimary,
+                                    unfocusedLabelColor = CyberTextSecondary,
+                                    focusedTextColor = CyberTextPrimary,
+                                    unfocusedTextColor = CyberTextPrimary
                             )
                         )
 
@@ -793,7 +902,7 @@ fun DashboardTab(
                             // Save Configuration
                             Button(
                                 onClick = {
-                                    viewModel.saveBotSettings(localToken, localGeminiKey, localInstruction)
+                                    viewModel.saveBotSettings(localToken, localGroqKey, settings.selectedModel, localInstruction)
                                     Toast.makeText(context, "Sistem tersimpan & diperbarui!", Toast.LENGTH_SHORT).show()
                                 },
                                 modifier = Modifier
@@ -1051,7 +1160,7 @@ fun DashboardTab(
                                 color = CyberPrimary
                             )
                             Text(
-                                "Pengaturan kredensial Bot Telegram, API Key Gemini, dan konfigurasi API/Secret merchant Tokopay dilindungi dan hanya dapat diubah oleh Administrator.",
+                                "Pengaturan kredensial Bot Telegram, API Key Groq, dan konfigurasi API/Secret merchant Tokopay dilindungi dan hanya dapat diubah oleh Administrator.",
                                 fontSize = 12.sp,
                                 color = CyberTextSecondary,
                                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
@@ -1500,6 +1609,8 @@ fun SandboxTab(viewModel: BotViewModel) {
     var promptInput by remember { mutableStateOf("") }
     val isPlaygroundLoading by viewModel.isPlaygroundLoading.collectAsStateWithLifecycle()
     val playgroundResponse by viewModel.playgroundResponse.collectAsStateWithLifecycle()
+    val settings by viewModel.settingsState.collectAsStateWithLifecycle()
+    val activeModelName = settings.selectedModel
 
     LazyColumn(
         modifier = Modifier
@@ -1524,7 +1635,7 @@ fun SandboxTab(viewModel: BotViewModel) {
                         Icon(Icons.Default.Send, contentDescription = "Playground", tint = CyberSecondary, modifier = Modifier.size(24.dp))
                         Column {
                             Text(
-                                "AI Gemini Sandbox Playground",
+                                "AI Groq Sandbox Playground",
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 15.sp,
                                 color = CyberTextPrimary
@@ -1555,7 +1666,7 @@ fun SandboxTab(viewModel: BotViewModel) {
                     )
 
                     Button(
-                        onClick = { viewModel.testGeminiPlayground(promptInput) },
+                        onClick = { viewModel.testGroqPlayground(promptInput) },
                         enabled = !isPlaygroundLoading && promptInput.isNotBlank(),
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1569,7 +1680,7 @@ fun SandboxTab(viewModel: BotViewModel) {
                         } else {
                             Icon(Icons.Default.Refresh, contentDescription = "Compute Response", modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("Uji Respon Gemini AI")
+                            Text("Uji Respon Groq AI")
                         }
                     }
                 }
@@ -1588,7 +1699,7 @@ fun SandboxTab(viewModel: BotViewModel) {
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         Text(
-                            "Hasil Output Model (gemini-3.5-flash):",
+                            "Hasil Output Model ($activeModelName):",
                             fontWeight = FontWeight.Bold,
                             color = CyberSecondary,
                             fontSize = 13.sp
@@ -1663,7 +1774,7 @@ fun HelpTab() {
             StepCard(
                 stepNumber = "2",
                 title = "Gelar Nama & Username Bot",
-                description = "Ikuti instruksi BotFather: Tentukan nama bot (contoh: Gemini Chat AI) dan ketik nama pengguna (username) bot Anda yang unik, diakhiri dengan kata '_bot' (contoh: asisten_hebat_game_bot).",
+                description = "Ikuti instruksi BotFather: Tentukan nama bot (contoh: Groq Chat AI) dan ketik nama pengguna (username) bot Anda yang unik, diakhiri dengan kata '_bot' (contoh: asisten_hebat_game_bot).",
                 hintText = "Nama pengguna tidak boleh mengandung karakter aneh selain underscore."
             )
         }
@@ -1694,7 +1805,7 @@ fun HelpTab() {
             StepCard(
                 stepNumber = "5",
                 title = "Mulai Chat di Telegram!",
-                description = "Segera buka bot Telegram buatan Anda dengan cara mengetik nama penggunanya di kotak pencarian Telegram, masuk ke chat room, klik /start, kirim teks pesan secara bebas. Bot Anda akan merespon menggunakan kecerdasan buatan Gemini AI secara otomatis seketika!",
+                description = "Segera buka bot Telegram buatan Anda dengan cara mengetik nama penggunanya di kotak pencarian Telegram, masuk ke chat room, klik /start, kirim teks pesan secara bebas. Bot Anda akan merespon menggunakan kecerdasan buatan Groq AI secara otomatis seketika!",
                 hintText = "Anda juga bisa memantau lalu-lintas data teks pada tab 'Terminal Log' realtime!"
             )
         }

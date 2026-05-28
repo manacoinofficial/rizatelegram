@@ -156,7 +156,8 @@ class BotService : Service() {
                                         textMessage = text,
                                         senderName = senderName,
                                         systemInstruction = currentSettings.systemInstruction,
-                                        apiKey = currentSettings.geminiApiKey
+                                        apiKey = currentSettings.groqApiKey,
+                                         model = currentSettings.selectedModel
                                     )
                                 }
                             }
@@ -193,14 +194,15 @@ class BotService : Service() {
         textMessage: String,
         senderName: String,
         systemInstruction: String,
-        apiKey: String
+        apiKey: String,
+        model: String
     ) {
         try {
-            repository.addLog("INFO", "Menghubungi Gemini AI...")
+            repository.addLog("INFO", "Menghubungi Groq AI ($model)...")
             val enrichedPrompt = "Seorang pengguna bernama $senderName berinteraksi dengan Anda di bot Telegram. Dia berkata: \"$textMessage\". Harap balas dengan sopan sesuai instruksi sistem."
-            val aiResponse = repository.askGemini(enrichedPrompt, apiKey, systemInstruction)
+            val aiResponse = repository.askGroq(enrichedPrompt, apiKey, model, systemInstruction)
 
-            repository.addLog("OUTGOING", "Balasan AI Gemini: \"$aiResponse\"")
+            repository.addLog("OUTGOING", "Balasan AI Groq: \"$aiResponse\"")
 
             repository.sendTelegramMessage(
                 token = token,

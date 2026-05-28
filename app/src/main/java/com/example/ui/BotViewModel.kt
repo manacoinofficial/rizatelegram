@@ -102,14 +102,16 @@ class BotViewModel(private val repository: BotRepository) : ViewModel() {
 
     fun saveBotSettings(
         token: String,
-        geminiKey: String,
+        groqKey: String,
+        selectedModel: String,
         instruction: String
     ) {
         viewModelScope.launch {
             val current = settingsState.value
             val updated = current.copy(
                 telegramToken = token.trim(),
-                geminiApiKey = geminiKey.trim(),
+                groqApiKey = groqKey.trim(),
+                selectedModel = selectedModel.trim(),
                 systemInstruction = instruction
             )
             repository.saveSettings(updated)
@@ -176,9 +178,9 @@ class BotViewModel(private val repository: BotRepository) : ViewModel() {
     }
 
     /**
-     * Tests Gemini integration inside a sandbox environment directly in-app
+     * Tests Groq integration inside a sandbox environment directly in-app
      */
-    fun testGeminiPlayground(prompt: String) {
+    fun testGroqPlayground(prompt: String) {
         if (prompt.isBlank()) return
         _isPlaygroundLoading.value = true
         _playgroundResponse.value = null
@@ -186,17 +188,87 @@ class BotViewModel(private val repository: BotRepository) : ViewModel() {
         viewModelScope.launch {
             try {
                 val instruction = settingsState.value.systemInstruction
-                val key = settingsState.value.geminiApiKey
-                repository.addLog("INFO", "Menguji prompt Gemini AI di antarmuka sandbox...")
-                val response = repository.askGemini(prompt, key, instruction)
+                val key = settingsState.value.groqApiKey
+                val model = settingsState.value.selectedModel
+                repository.addLog("INFO", "Menguji prompt Groq AI ($model) di antarmuka sandbox...")
+                val response = repository.askGroq(prompt, key, model, instruction)
                 _playgroundResponse.value = response
-                repository.addLog("SUCCESS", "Uji Gemini Berhasil! Tanggapan diterima.")
+                repository.addLog("SUCCESS", "Uji Groq Berhasil! Tanggapan diterima.")
             } catch (e: Exception) {
                 _playgroundResponse.value = "Error: ${e.message}"
-                repository.addLog("ERROR", "Uji Gemini gagal: ${e.message}")
+                repository.addLog("ERROR", "Uji Groq gagal: ${e.message}")
             } finally {
                 _isPlaygroundLoading.value = false
             }
+        }
+    }
+
+    fun selectModel(modelName: String) {
+        viewModelScope.launch {
+            val current = settingsState.value
+            val updated = current.copy(selectedModel = modelName.trim())
+            repository.saveSettings(updated)
+            repository.addLog("INFO", "Model aktif diubah menjadi: $modelName")
+        }
+    }
+
+    fun addGroqModel(modelName: String) {
+        val trimmed = modelName.trim()
+        if (trimmed.isEmpty()) return
+        viewModelScope.launch {
+            val current = settingsState.value
+            val currentList = current.groqModels.split(",")
+                .map { it.trim() }
+                .filter { it.isNotEmpty() }
+                .toMutableList()
+
+            if (currentList.contains(trimmed)) {
+                repository.addLog("WARNING", "Model \"$trimmed\" sudah ada didaftar.")
+                return@launch
+            }
+
+            currentList.add(trimmed)
+            val updatedString = currentList.joinToString(",")
+            val updated = current.copy(groqModels = updatedString)
+            repository.saveSettings(updated)
+            repository.addLog("SUCCESS", "Model baru ditambahkan: $trimmed")
+        }
+    }
+
+    fun deleteGroqModel(modelName: String) {
+        val trimmed = modelName.trim()
+        if (trimmed.isEmpty()) return
+        viewModelScope.launch {
+            val current = settingsState.value
+            val currentList = current.groqModels.split(",")
+                .map { it.trim() }
+                .filter { it.isNotEmpty() }
+                .toMutableList()
+
+            if (!currentList.contains(trimmed)) {
+                repository.addLog("WARNING", "Model \"$trimmed\" tidak ditemukan didaftar.")
+                return@launch
+            }
+
+            if (currentList.size <= 1) {
+                repository.addLog("WARNING", "Gagal menghapus. Minimal harus menyisakan 1 model aktif.")
+                return@launch
+            }
+
+            currentList.remove(trimmed)
+            val updatedString = currentList.joinToString(",")
+            val nextSelected = if (current.selectedModel == trimmed) {
+                currentList.first()
+            } else {
+                current.selectedModel
+            }
+
+            val updated = current.copy(
+                groqModels = updatedString,
+                selectedModel = nextSelected
+            )
+            repository.saveSettings(updated)
+            repository.addLog("SUCCESS", "Model dihapus: $trimmed")
         }
     }
 

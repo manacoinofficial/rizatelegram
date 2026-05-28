@@ -92,54 +92,53 @@ class BotRepository(private val botDao: BotDao) {
     }
 
     /**
-     * Sends prompt to Gemini API.
+     * Sends prompt to Groq API.
      */
-    suspend fun askGemini(
+    suspend fun askGroq(
         prompt: String,
         customApiKey: String? = null,
+        model: String = "llama-3.1-8b-instant",
         systemInstruction: String = "Anda adalah asisten AI Telegram yang ramah."
     ): String = withContext(Dispatchers.IO) {
-        val key = customApiKey?.takeIf { it.isNotBlank() } ?: BuildConfig.GEMINI_API_KEY
-        if (key.isBlank() || key == "MY_GEMINI_API_KEY") {
-            throw Exception("API Key Gemini belum dikonfigurasi. Harap masukkan API Key Gemini yang valid.")
+        val key = customApiKey?.takeIf { it.isNotBlank() } ?: ""
+        if (key.isBlank()) {
+            throw Exception("API Key Groq belum dikonfigurasi. Harap masukkan API Key Groq yang valid.")
         }
 
-        val request = GeminiRequest(
-            contents = listOf(
-                GeminiContent(parts = listOf(GeminiPart(text = prompt)))
+        val authHeader = "Bearer $key"
+        val request = GroqRequest(
+            model = model.trim(),
+            messages = listOf(
+                GroqMessage(role = "system", content = systemInstruction),
+                GroqMessage(role = "user", content = prompt)
             ),
-            systemInstruction = GeminiContent(
-                parts = listOf(GeminiPart(text = systemInstruction))
-            ),
-            generationConfig = GeminiGenerationConfig(temperature = 0.7f)
+            temperature = 0.7f
         )
 
         try {
-            // Use gemini-3.5-flash as default for basic text chat tasks
-            val response = NetworkClient.geminiService.generateContent(
-                model = "gemini-3.5-flash",
-                apiKey = key,
+            val response = NetworkClient.groqService.generateChatCompletion(
+                authHeader = authHeader,
                 request = request
             )
-            val replyText = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
-            replyText ?: throw Exception("Menerima respon kosong dari API Gemini.")
+            val replyText = response.choices?.firstOrNull()?.message?.content
+            replyText ?: throw Exception("Menerima respon kosong dari API Groq.")
         } catch (e: retrofit2.HttpException) {
             val code = e.code()
             if (code == 429) {
-                throw Exception("Gemini API Error: HTTPS 429 (Too Many Requests / Batas Limit Terlampaui). Harap tunggu beberapa saat atau ganti API Key Anda di menu Pengaturan.")
+                throw Exception("Groq API Error: HTTPS 429 (Too Many Requests / Batas Limit Terlampaui). Harap ganti API Key Anda atau kurangi jumlah request.")
             } else if (code == 401) {
-                throw Exception("Gemini API Error: HTTPS 401 (Tidak Diizinkan). API Key Gemini Anda tidak valid atau telah kedaluwarsa. Silakan periksa kembali dan ganti API Key Anda di menu Pengaturan.")
+                throw Exception("Groq API Error: HTTPS 401 (Tidak Diizinkan). API Key Groq Anda tidak valid atau telah kedaluwarsa. Silakan periksa kembali dan ganti API Key Anda di menu Pengaturan.")
             } else {
-                throw Exception("Gemini API Error: HTTP $code - ${e.message() ?: "Error terjadi pada server Google"}")
+                throw Exception("Groq API Error: HTTP $code - ${e.message() ?: "Error terjadi pada server Groq"}")
             }
         } catch (e: Exception) {
             val message = e.localizedMessage ?: e.message ?: "Unknown error"
             if (message.contains("429")) {
-                throw Exception("Gemini API Error: HTTPS 429 (Too Many Requests / Batas Limit Terlampaui). Harap tunggu beberapa saat atau ganti API Key Anda di menu Pengaturan.")
+                throw Exception("Groq API Error: HTTPS 429 (Too Many Requests / Batas Limit Terlampaui). Harap ganti API Key Anda.")
             } else if (message.contains("401") || message.contains("Unauthorized", ignoreCase = true)) {
-                throw Exception("Gemini API Error: HTTPS 401 (Tidak Diizinkan). API Key Gemini Anda tidak valid atau telah kedaluwarsa. Silakan periksa kembali dan ganti API Key Anda di menu Pengaturan.")
+                throw Exception("Groq API Error: HTTPS 401 (Tidak Diizinkan). API Key Groq Anda tidak valid atau telah kedaluwarsa. Silakan periksa kembali dan ganti API Key Anda di menu Pengaturan.")
             }
-            throw Exception("Gemini API Error: $message")
+            throw Exception("Groq API Error: $message")
         }
     }
 }

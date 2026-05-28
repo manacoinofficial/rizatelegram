@@ -28,13 +28,12 @@ interface TelegramApiService {
     ): TelegramSendMessageResponse
 }
 
-interface GeminiApiService {
-    @POST("v1beta/models/{model}:generateContent")
-    suspend fun generateContent(
-        @Path("model") model: String,
-        @Query("key") apiKey: String,
-        @Body request: GeminiRequest
-    ): GeminiResponse
+interface GroqApiService {
+    @POST("chat/completions")
+    suspend fun generateChatCompletion(
+        @Header("Authorization") authHeader: String,
+        @Body request: GroqRequest
+    ): GroqResponse
 }
 
 object NetworkClient {
@@ -63,12 +62,12 @@ object NetworkClient {
             .create(TelegramApiService::class.java)
     }
 
-    val geminiService: GeminiApiService by lazy {
+    val groqService: GroqApiService by lazy {
         Retrofit.Builder()
-            .baseUrl("https://generativelanguage.googleapis.com/")
+            .baseUrl("https://api.groq.com/openai/v1/")
             .client(okHttpClient)
             .addConverterFactory(MoshiConverterFactory.create(moshi))
             .build()
-            .create(GeminiApiService::class.java)
+            .create(GroqApiService::class.java)
     }
 }

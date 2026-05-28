@@ -76,37 +76,27 @@ data class TelegramSendMessageResponse(
     val description: String? = null
 )
 
-// --- GEMINI MODELS ---
+// --- GROQ MODELS ---
 
 @JsonClass(generateAdapter = true)
-data class GeminiRequest(
-    val contents: List<GeminiContent>,
-    val systemInstruction: GeminiContent? = null,
-    val generationConfig: GeminiGenerationConfig? = null
+data class GroqRequest(
+    val model: String,
+    val messages: List<GroqMessage>,
+    val temperature: Float? = null
 )
 
 @JsonClass(generateAdapter = true)
-data class GeminiContent(
-    val parts: List<GeminiPart>
+data class GroqMessage(
+    val role: String,
+    val content: String
 )
 
 @JsonClass(generateAdapter = true)
-data class GeminiPart(
-    val text: String
+data class GroqResponse(
+    val choices: List<GroqChoice>? = null
 )
 
 @JsonClass(generateAdapter = true)
-data class GeminiGenerationConfig(
-    val temperature: Float? = null,
-    val maxOutputTokens: Int? = null
-)
-
-@JsonClass(generateAdapter = true)
-data class GeminiResponse(
-    val candidates: List<GeminiCandidate>? = null
-)
-
-@JsonClass(generateAdapter = true)
-data class GeminiCandidate(
-    val content: GeminiContent? = null
+data class GroqChoice(
+    val message: GroqMessage? = null
 )

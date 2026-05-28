@@ -7,7 +7,9 @@ import androidx.room.PrimaryKey
 data class BotSettings(
     @PrimaryKey val id: Int = 1, // Store a single configuration instance
     val telegramToken: String = "",
-    val geminiApiKey: String = "",
+    val groqApiKey: String = "",
+    val selectedModel: String = "llama-3.1-8b-instant",
+    val groqModels: String = "llama-3.1-8b-instant,llama3-8b-8192,llama-3.1-70b-versatile,gemma2-9b-it,mixtral-8x7b-32768",
     val systemInstruction: String = "Anda adalah asisten AI Telegram yang ramah dan siap membantu menjawab semua pertanyaan.",
     val botUsername: String = "",
     val botFirstName: String = "",
