@@ -1,0 +1,6 @@
+{
+  "name": "AI Telegram Bot",
+  "description": "Integrasi AI Gemini dengan Telegram Bot secara realtime. Konfigurasi bot Anda, jalankan polling secara langsung, dan lihat log aktivitas secara detail tanpa error.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
