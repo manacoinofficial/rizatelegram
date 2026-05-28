@@ -174,7 +174,7 @@ fun BotScreen(
 }
 
 @Composable
-fun SimulatedQrisQrCode(amount: Int) {
+fun QrisQrCodeVisual(amount: Int) {
     Box(
         modifier = Modifier
             .size(220.dp)
@@ -974,7 +974,7 @@ fun DashboardTab(
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Refresh,
-                                contentDescription = "Simulator Icon",
+                                contentDescription = "Uji Icon",
                                 tint = CyberPrimary,
                                 modifier = Modifier.size(20.dp)
                             )
@@ -987,7 +987,7 @@ fun DashboardTab(
                         }
 
                         Text(
-                            "Simulasikan flow order transaksi Tokopay. Administrator dapat meluncurkan invoice uji coba secara realtime dan memverifikasi integrasi callback webhook langsung dalam console.",
+                            "Uji flow order transaksi Tokopay. Administrator dapat meluncurkan invoice uji coba secara realtime dan memverifikasi integrasi callback webhook langsung dalam console.",
                             fontSize = 11.sp,
                             color = CyberTextSecondary
                         )
@@ -1142,10 +1142,10 @@ fun DashboardTab(
 
                                     // Render visual depending on QRIS vs Virtual Account
                                     if (tokopayInvoice!!.paymentMethod == "QRIS") {
-                                        SimulatedQrisQrCode(amount = tokopayInvoice!!.amount)
+                                        QrisQrCodeVisual(amount = tokopayInvoice!!.amount)
                                         Text("Pindai QRIS menggunakan aplikasi banking / e-wallet Anda.", fontSize = 10.sp, color = CyberTextSecondary, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
                                     } else {
-                                        // Simulator virtual account visual instruction card
+                                        // Transfer virtual account visual instruction card
                                         Box(
                                             modifier = Modifier
                                                 .fillMaxWidth()
@@ -1178,13 +1178,13 @@ fun DashboardTab(
                                         }
                                     }
 
-                                    // Webhook simulation pay button
+                                    // Webhook test pay button
                                     if (tokopayInvoice!!.status == "PENDING") {
                                         Button(
                                             onClick = { viewModel.simulatePaymentSuccess() },
                                             modifier = Modifier
                                                 .fillMaxWidth()
-                                                .testTag("tokopay_simulate_pay_button"),
+                                                .testTag("tokopay_test_pay_button"),
                                             colors = ButtonDefaults.buttonColors(containerColor = CyberSecondary),
                                             shape = RoundedCornerShape(8.dp)
                                         ) {
@@ -1192,8 +1192,8 @@ fun DashboardTab(
                                                 verticalAlignment = Alignment.CenterVertically,
                                                 horizontalArrangement = Arrangement.spacedBy(6.dp)
                                             ) {
-                                                Icon(Icons.Default.CheckCircle, contentDescription = "Simulate payment webhook check", modifier = Modifier.size(18.dp))
-                                                Text("BAYAR INSTAN (SIMULASI WEBHOOK)", fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                                                Icon(Icons.Default.CheckCircle, contentDescription = "Test payment webhook check", modifier = Modifier.size(18.dp))
+                                                Text("BAYAR INSTAN (UJI WEBHOOK)", fontWeight = FontWeight.Bold, fontSize = 11.sp)
                                             }
                                         }
                                     } else {
@@ -1435,8 +1435,8 @@ fun SandboxTab(viewModel: BotViewModel) {
                     OutlinedTextField(
                         value = promptInput,
                         onValueChange = { promptInput = it },
-                        label = { Text("Kirim Pesan Simulasi") },
-                        placeholder = { Text("Tulis pesan simulasi seolah dikirim oleh pengguna Telegram...") },
+                        label = { Text("Kirim Pesan Uji Coba") },
+                        placeholder = { Text("Tulis pesan uji coba seolah dikirim oleh pengguna Telegram...") },
                         modifier = Modifier
                             .fillMaxWidth()
                             .heightIn(min = 90.dp)

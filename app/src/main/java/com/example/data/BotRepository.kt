@@ -123,8 +123,19 @@ class BotRepository(private val botDao: BotDao) {
             )
             val replyText = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
             replyText ?: throw Exception("Menerima respon kosong dari API Gemini.")
+        } catch (e: retrofit2.HttpException) {
+            val code = e.code()
+            if (code == 429) {
+                throw Exception("Gemini API Error: HTTPS 429 (Too Many Requests / Batas Limit Terlampaui). Harap tunggu beberapa saat atau ganti API Key Anda di menu Pengaturan.")
+            } else {
+                throw Exception("Gemini API Error: HTTP $code - ${e.message() ?: "Error terjadi pada server Google"}")
+            }
         } catch (e: Exception) {
-            throw Exception("Gemini API Error: ${e.localizedMessage ?: e.message}")
+            val message = e.localizedMessage ?: e.message ?: "Unknown error"
+            if (message.contains("429")) {
+                throw Exception("Gemini API Error: HTTPS 429 (Too Many Requests / Batas Limit Terlampaui). Harap tunggu beberapa saat atau ganti API Key Anda di menu Pengaturan.")
+            }
+            throw Exception("Gemini API Error: $message")
         }
     }
 }
