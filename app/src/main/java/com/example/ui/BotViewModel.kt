@@ -161,16 +161,19 @@ class BotViewModel(private val repository: BotRepository) : ViewModel() {
 
     fun toggleBotState(context: android.content.Context) {
         val currentSettings = settingsState.value
-        if (currentSettings.isBotRunning) {
-            BotService.stopService(context)
-        } else {
-            if (currentSettings.telegramToken.isBlank()) {
-                viewModelScope.launch {
+        viewModelScope.launch {
+            if (currentSettings.isBotRunning) {
+                BotService.stopService(context)
+            } else {
+                if (currentSettings.telegramToken.isBlank()) {
                     repository.addLog("ERROR", "Gagal mengaktifkan bot: Token Telegram belum diisi.")
+                    return@launch
                 }
-                return
+                val updated = currentSettings.copy(isBotRunning = true)
+                repository.saveSettings(updated)
+                repository.addLog("INFO", "Mengaktifkan bot...")
+                BotService.startService(context)
             }
-            BotService.startService(context)
         }
     }
 
