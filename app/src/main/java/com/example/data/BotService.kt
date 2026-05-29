@@ -63,12 +63,12 @@ class BotService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val action = intent?.action
-        if (action == "START") {
+        val action = intent?.action ?: "START"
+        if (action == "STOP") {
+            stopPollingAndService()
+        } else {
             startForegroundNotification()
             startPolling()
-        } else if (action == "STOP") {
-            stopPollingAndService()
         }
         return START_STICKY
     }
