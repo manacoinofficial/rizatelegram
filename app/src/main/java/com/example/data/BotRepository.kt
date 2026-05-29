@@ -9,6 +9,19 @@ class BotRepository(private val botDao: BotDao) {
 
     val settingsFlow: Flow<BotSettings?> = botDao.getSettingsFlow()
     val logsFlow: Flow<List<BotLog>> = botDao.getLogsFlow()
+    val registeredUsersFlow: Flow<List<RegisteredUser>> = botDao.getRegisteredUsersFlow()
+
+    suspend fun getActiveRegisteredUsers(): List<RegisteredUser> = withContext(Dispatchers.IO) {
+        botDao.getActiveRegisteredUsers()
+    }
+
+    suspend fun saveRegisteredUser(user: RegisteredUser): Long = withContext(Dispatchers.IO) {
+        botDao.saveRegisteredUser(user)
+    }
+
+    suspend fun deleteRegisteredUserById(userId: Long) = withContext(Dispatchers.IO) {
+        botDao.deleteRegisteredUserById(userId)
+    }
 
     suspend fun getSettings(): BotSettings? = withContext(Dispatchers.IO) {
         botDao.getSettings()

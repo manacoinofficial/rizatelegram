@@ -22,4 +22,16 @@ interface BotDao {
 
     @Query("DELETE FROM bot_logs")
     suspend fun clearLogs()
+
+    @Query("SELECT * FROM registered_users ORDER BY id DESC")
+    fun getRegisteredUsersFlow(): Flow<List<RegisteredUser>>
+
+    @Query("SELECT * FROM registered_users WHERE isActive = 1")
+    suspend fun getActiveRegisteredUsers(): List<RegisteredUser>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun saveRegisteredUser(user: RegisteredUser): Long
+
+    @Query("DELETE FROM registered_users WHERE id = :userId")
+    suspend fun deleteRegisteredUserById(userId: Long)
 }

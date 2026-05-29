@@ -98,92 +98,154 @@ class BotService : Service() {
         }
     }
 
+    private data class BotConfig(
+        val token: String,
+        val model: String,
+        val systemInstruction: String,
+        val name: String
+    )
+
     private fun startPolling() {
         if (pollingJob != null && pollingJob!!.isActive) return
 
         pollingJob = serviceScope.launch {
+            val activeJobs = java.util.concurrent.ConcurrentHashMap<String, Job>()
             try {
-                val settings = repository.getSettings() ?: BotSettings()
-                if (settings.telegramToken.isBlank()) {
-                    repository.addLog("ERROR", "Token Telegram kosong, tidak dapat mengaktifkan bot.")
-                    stopPollingAndService()
-                    return@launch
-                }
-
-                // Pre-validation to obtain bot info
-                try {
-                    val info = repository.validateTelegramBot(settings.telegramToken)
-                    repository.saveSettings(settings.copy(
-                        isBotRunning = true,
-                        botFirstName = info.firstName,
-                        botUsername = info.username ?: ""
-                    ))
-                    repository.addLog("SUCCESS", "Bot @${info.username} aktif di background (24 Jam Non-Stop).")
-                } catch (e: Exception) {
-                    repository.addLog("ERROR", "Uji koneksi awal bot gagal: ${e.message}")
-                }
-
+                // Outer loop manages active bots configuration dynamically
                 while (isActive) {
-                    val currentSettings = repository.getSettings() ?: break
-                    if (!currentSettings.isBotRunning) {
-                        break
-                    }
+                    val settings = repository.getSettings() ?: BotSettings()
+                    val activeUsers = repository.getActiveRegisteredUsers()
 
-                    try {
-                        val updates = repository.fetchTelegramUpdates(
-                            token = currentSettings.telegramToken,
-                            offset = if (lastUpdateId > 0) lastUpdateId else null,
-                            timeout = 10
+                    val targetBots = mutableListOf<BotConfig>()
+
+                    // 1. Add system bot if enabled
+                    if (settings.isBotRunning && settings.telegramToken.isNotBlank()) {
+                        targetBots.add(
+                            BotConfig(
+                                token = settings.telegramToken,
+                                model = settings.selectedModel,
+                                systemInstruction = settings.systemInstruction,
+                                name = "Main System Bot"
+                            )
                         )
-
-                        for (update in updates) {
-                            lastUpdateId = update.updateId + 1
-                            val message = update.message
-                            val text = message?.text
-                            val chat = message?.chat
-                            val from = message?.from
-
-                            if (text != null && chat != null) {
-                                val senderName = from?.firstName ?: "User"
-                                val chatUsernameString = from?.username?.let { "@$it" } ?: "ID: ${chat.id}"
-                                repository.addLog("INCOMING", "Pesan dari $senderName ($chatUsernameString): \"$text\"")
-
-                                launch {
-                                    handleIncomingMessage(
-                                        token = currentSettings.telegramToken,
-                                        chatId = chat.id,
-                                        messageId = message.messageId,
-                                        textMessage = text,
-                                        senderName = senderName,
-                                        systemInstruction = currentSettings.systemInstruction,
-                                        apiKey = currentSettings.groqApiKey,
-                                         model = currentSettings.selectedModel
-                                    )
-                                }
-                            }
-                        }
-                    } catch (e: Exception) {
-                        val errorMsg = e.localizedMessage ?: e.message ?: "Koneksi Bermasalah"
-                        Log.e("BotService", "Polling error: $errorMsg")
-                        if (errorMsg.contains("401") || errorMsg.contains("Unauthorized")) {
-                            repository.addLog("ERROR", "Token Telegram tidak valid (HTTP 401). Menonaktifkan bot.")
-                            break
-                        }
-                        repository.addLog("WARNING", "Koneksi telegram terganggu: $errorMsg. Mencoba kembali...")
-                        delay(10000)
                     }
-                    delay(1500)
+
+                    // 2. Add registered user bots
+                    for (user in activeUsers) {
+                        if (user.telegramToken.isNotBlank()) {
+                            targetBots.add(
+                                BotConfig(
+                                    token = user.telegramToken,
+                                    model = user.selectedModel,
+                                    systemInstruction = settings.systemInstruction,
+                                    name = user.name
+                                )
+                            )
+                        }
+                    }
+
+                    val targetTokens = targetBots.map { it.token }.toSet()
+
+                    // Cancel bots that shouldn't be running anymore
+                    val tokensToStop = activeJobs.keys.filter { it !in targetTokens }
+                    for (token in tokensToStop) {
+                        activeJobs[token]?.cancel()
+                        activeJobs.remove(token)
+                        repository.addLog("INFO", "Bot Polling dinonaktifkan untuk bot token: ...${token.takeLast(6)}")
+                    }
+
+                    // Start bots that aren't running yet
+                    for (bot in targetBots) {
+                        if (!activeJobs.containsKey(bot.token) || activeJobs[bot.token]?.isActive != true) {
+                            val job = launch(Dispatchers.IO) {
+                                pollSingleBot(bot, settings.groqApiKey)
+                            }
+                            activeJobs[bot.token] = job
+                        }
+                    }
+
+                    delay(5000) // Dynamically sync running bots every 5 seconds
                 }
             } catch (e: CancellationException) {
-                // Task canceled normally
+                // Done
             } catch (e: Exception) {
-                repository.addLog("ERROR", "Kesalahan sistem polling: ${e.message}")
+                repository.addLog("ERROR", "Kesalahan pengelola bot background: ${e.message}")
             } finally {
-                val currentSettings = repository.getSettings()
-                if (currentSettings != null) {
-                    repository.saveSettings(currentSettings.copy(isBotRunning = false))
-                }
+                activeJobs.values.forEach { it.cancel() }
+                activeJobs.clear()
             }
+        }
+    }
+
+    private suspend fun pollSingleBot(bot: BotConfig, groqApiKey: String) {
+        var lastUpdateId = 0L
+
+        try {
+            val info = repository.validateTelegramBot(bot.token)
+            // Auto update display info in DB if registered user matching
+            val activeUsers = repository.getActiveRegisteredUsers()
+            val matchingUser = activeUsers.find { it.telegramToken == bot.token }
+            if (matchingUser != null && (matchingUser.botUsername != info.username || matchingUser.botFirstName != info.firstName)) {
+                repository.saveRegisteredUser(
+                    matchingUser.copy(
+                        botUsername = info.username ?: "",
+                        botFirstName = info.firstName
+                    )
+                )
+            }
+            repository.addLog("SUCCESS", "Bot @${info.username} milik [${bot.name}] aktif di background.")
+        } catch (e: Exception) {
+            repository.addLog("ERROR", "Uji koneksi gagal untuk bot [${bot.name}]: ${e.message}")
+            delay(15000)
+        }
+
+        while (currentCoroutineContext().isActive) {
+            try {
+                val updates = repository.fetchTelegramUpdates(
+                    token = bot.token,
+                    offset = if (lastUpdateId > 0) lastUpdateId else null,
+                    timeout = 10
+                )
+
+                for (update in updates) {
+                    lastUpdateId = update.updateId + 1
+                    val message = update.message
+                    val text = message?.text
+                    val chat = message?.chat
+                    val from = message?.from
+
+                    if (text != null && chat != null) {
+                        val senderName = from?.firstName ?: "User"
+                        val chatUsernameString = from?.username?.let { "@$it" } ?: "ID: ${chat.id}"
+                        repository.addLog("INCOMING", "[$chatUsernameString -> @${bot.name}]: \"$text\"")
+
+                        coroutineScope {
+                            launch {
+                                handleIncomingMessage(
+                                    token = bot.token,
+                                    chatId = chat.id,
+                                    messageId = message.messageId,
+                                    textMessage = text,
+                                    senderName = senderName,
+                                    systemInstruction = bot.systemInstruction,
+                                    apiKey = groqApiKey,
+                                    model = bot.model,
+                                    botName = bot.name
+                                )
+                            }
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                val errorMsg = e.localizedMessage ?: e.message ?: "Koneksi Bermasalah"
+                Log.e("BotService", "Polling error for ${bot.name}: $errorMsg")
+                if (errorMsg.contains("401") || errorMsg.contains("Unauthorized")) {
+                    repository.addLog("ERROR", "Token untuk bot [${bot.name}] tidak valid (HTTP 401). Polling dihentikan.")
+                    break
+                }
+                delay(12000)
+            }
+            delay(1500)
         }
     }
 
@@ -195,14 +257,15 @@ class BotService : Service() {
         senderName: String,
         systemInstruction: String,
         apiKey: String,
-        model: String
+        model: String,
+        botName: String
     ) {
         try {
-            repository.addLog("INFO", "Menghubungi Groq AI ($model)...")
+            repository.addLog("INFO", "Menghubungi Groq AI ($model) untuk bot [$botName]...")
             val enrichedPrompt = "Seorang pengguna bernama $senderName berinteraksi dengan Anda di bot Telegram. Dia berkata: \"$textMessage\". Harap balas dengan sopan sesuai instruksi sistem."
             val aiResponse = repository.askGroq(enrichedPrompt, apiKey, model, systemInstruction)
 
-            repository.addLog("OUTGOING", "Balasan AI Groq: \"$aiResponse\"")
+            repository.addLog("OUTGOING", "[@$botName -> @$senderName]: \"$aiResponse\"")
 
             repository.sendTelegramMessage(
                 token = token,
@@ -210,10 +273,10 @@ class BotService : Service() {
                 text = aiResponse,
                 replyToMessageId = messageId
             )
-            repository.addLog("SUCCESS", "Balasan berhasil dikirim ke @$senderName")
+            repository.addLog("SUCCESS", "Pesan dijawab sukses oleh bot [$botName] ke @$senderName")
         } catch (e: Exception) {
             val errMsg = e.localizedMessage ?: e.message ?: "Unknown Error"
-            repository.addLog("ERROR", "Gagal menjawab pesan: $errMsg")
+            repository.addLog("ERROR", "Bot [$botName] gagal menjawab pesan: $errMsg")
 
             try {
                 repository.sendTelegramMessage(
@@ -234,7 +297,7 @@ class BotService : Service() {
             if (settings != null) {
                 repository.saveSettings(settings.copy(isBotRunning = false))
             }
-            repository.addLog("INFO", "Bot telegram dinonaktifkan.")
+            repository.addLog("INFO", "Semua aktivitas polling bot dihentikan sepenuhnya.")
             withContext(Dispatchers.Main) {
                 stopForeground(true)
                 stopSelf()

@@ -22,6 +22,20 @@ data class BotSettings(
     val tokopayIsActive: Boolean = false
 )
 
+@Entity(tableName = "registered_users")
+data class RegisteredUser(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0L,
+    val name: String = "",
+    val whatsappNumber: String = "",
+    val telegramToken: String = "",
+    val selectedModel: String = "llama-3.1-8b-instant",
+    val price: Double = 0.0,
+    val isActive: Boolean = true,
+    val botUsername: String = "",
+    val botFirstName: String = "",
+    val createdAt: Long = System.currentTimeMillis()
+)
+
 @Entity(tableName = "bot_logs")
 data class BotLog(
     @PrimaryKey(autoGenerate = true) val id: Long = 0L,

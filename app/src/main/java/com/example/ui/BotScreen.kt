@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.BotLog
+import com.example.data.RegisteredUser
 import com.example.ui.theme.*
 import java.text.SimpleDateFormat
 import java.util.*
@@ -48,9 +49,22 @@ fun BotScreen(
     val validationError by viewModel.validationError.collectAsStateWithLifecycle()
     val settings by viewModel.settingsState.collectAsStateWithLifecycle()
     val logs by viewModel.logsState.collectAsStateWithLifecycle()
+    val isAdminLoggedIn by viewModel.isAdminLoggedIn.collectAsStateWithLifecycle()
 
     var selectedTab by remember { mutableStateOf(0) }
-    val tabs = listOf("Dashboard", "Terminal Log", "Sandbox AI", "Panduan Setup")
+    val tabs = remember(isAdminLoggedIn) {
+        if (isAdminLoggedIn) {
+            listOf("Dashboard", "Terminal Log", "Sandbox AI", "Registrasi (WA)", "Panduan Setup")
+        } else {
+            listOf("Dashboard", "Terminal Log", "Sandbox AI", "Panduan Setup")
+        }
+    }
+
+    LaunchedEffect(tabs.size) {
+        if (selectedTab >= tabs.size) {
+            selectedTab = 0
+        }
+    }
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -150,23 +164,45 @@ fun BotScreen(
                     .fillMaxSize()
                     .weight(1f)
             ) {
-                when (selectedTab) {
-                    0 -> DashboardTab(
-                        viewModel = viewModel,
-                        isRunning = isRunning,
-                        isChecking = isChecking,
-                        botInfo = botInfo,
-                        validationError = validationError,
-                        settingsToken = settings.telegramToken,
-                        settingsGroqKey = settings.groqApiKey,
-                        settingsInstruction = settings.systemInstruction
-                    )
-                    1 -> LogsTab(
-                        logs = logs,
-                        onClearLogs = { viewModel.clearLogs() }
-                    )
-                    2 -> SandboxTab(viewModel = viewModel)
-                    3 -> HelpTab()
+                if (isAdminLoggedIn) {
+                    when (selectedTab) {
+                        0 -> DashboardTab(
+                            viewModel = viewModel,
+                            isRunning = isRunning,
+                            isChecking = isChecking,
+                            botInfo = botInfo,
+                            validationError = validationError,
+                            settingsToken = settings.telegramToken,
+                            settingsGroqKey = settings.groqApiKey,
+                            settingsInstruction = settings.systemInstruction
+                        )
+                        1 -> LogsTab(
+                            logs = logs,
+                            onClearLogs = { viewModel.clearLogs() }
+                        )
+                        2 -> SandboxTab(viewModel = viewModel)
+                        3 -> RegistrationTab(viewModel = viewModel)
+                        4 -> HelpTab()
+                    }
+                } else {
+                    when (selectedTab) {
+                        0 -> DashboardTab(
+                            viewModel = viewModel,
+                            isRunning = isRunning,
+                            isChecking = isChecking,
+                            botInfo = botInfo,
+                            validationError = validationError,
+                            settingsToken = settings.telegramToken,
+                            settingsGroqKey = settings.groqApiKey,
+                            settingsInstruction = settings.systemInstruction
+                        )
+                        1 -> LogsTab(
+                            logs = logs,
+                            onClearLogs = { viewModel.clearLogs() }
+                        )
+                        2 -> SandboxTab(viewModel = viewModel)
+                        3 -> HelpTab()
+                    }
                 }
             }
         }
@@ -1917,3 +1953,488 @@ fun StepCard(
         }
     }
 }
+
+@Composable
+fun RegistrationTab(viewModel: BotViewModel) {
+    val context = LocalContext.current
+    val settings by viewModel.settingsState.collectAsStateWithLifecycle()
+    val users by viewModel.registeredUsersState.collectAsStateWithLifecycle()
+
+    var nameInput by remember { mutableStateOf("") }
+    var whatsappInput by remember { mutableStateOf("") }
+    var botTokenInput by remember { mutableStateOf("") }
+    var priceInput by remember { mutableStateOf("50000") }
+
+    val availableModels = remember(settings.groqModels) {
+        settings.groqModels.split(",")
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+    }
+    var selectedModel by remember { mutableStateOf("llama-3.1-8b-instant") }
+
+    LaunchedEffect(availableModels) {
+        if (selectedModel !in availableModels && availableModels.isNotEmpty()) {
+            selectedModel = availableModels.first()
+        }
+    }
+
+    var isLoading by remember { mutableStateOf(false) }
+    var isSuccessMessage by remember { mutableStateOf<String?>(null) }
+    var isErrorMessage by remember { mutableStateOf<String?>(null) }
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        // Form Title Card
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = CyberSurface),
+                border = BorderStroke(1.dp, CyberPrimary.copy(alpha = 0.5f))
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Text(
+                        text = "REGISTRASI CLIENT BOT (WHATSAPP)",
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp,
+                        color = CyberPrimary
+                    )
+                    Text(
+                        text = "Admin meregistrasikan bot client dan mengkonfigurasi model Groq & harga paketnya. Pendaftaran sukses otomatis menghasilkan pesan konfirmasi instan via WhatsApp.",
+                        fontSize = 12.sp,
+                        color = CyberTextSecondary
+                    )
+
+                    OutlinedTextField(
+                        value = nameInput,
+                        onValueChange = { nameInput = it },
+                        label = { Text("Nama Client") },
+                        placeholder = { Text("cth: Riza") },
+                        modifier = Modifier.fillMaxWidth().testTag("client_name_input"),
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            unfocusedContainerColor = CyberSurface,
+                            focusedContainerColor = CyberSurfaceVariant,
+                            unfocusedBorderColor = CyberCardBorder,
+                            focusedBorderColor = CyberPrimary,
+                            unfocusedTextColor = CyberTextPrimary,
+                            focusedTextColor = CyberTextPrimary,
+                            unfocusedLabelColor = CyberTextSecondary,
+                            focusedLabelColor = CyberPrimary
+                        )
+                    )
+
+                    OutlinedTextField(
+                        value = whatsappInput,
+                        onValueChange = { whatsappInput = it },
+                        label = { Text("Nomor WhatsApp Client") },
+                        placeholder = { Text("cth: 08123456789 atau 628...") },
+                        modifier = Modifier.fillMaxWidth().testTag("whatsapp_input"),
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            unfocusedContainerColor = CyberSurface,
+                            focusedContainerColor = CyberSurfaceVariant,
+                            unfocusedBorderColor = CyberCardBorder,
+                            focusedBorderColor = CyberPrimary,
+                            unfocusedTextColor = CyberTextPrimary,
+                            focusedTextColor = CyberTextPrimary,
+                            unfocusedLabelColor = CyberTextSecondary,
+                            focusedLabelColor = CyberPrimary
+                        )
+                    )
+
+                    OutlinedTextField(
+                        value = botTokenInput,
+                        onValueChange = { botTokenInput = it },
+                        label = { Text("Token Telegram (dari BotFather)") },
+                        placeholder = { Text("cth: 12345678:ABCDefGHiJ...") },
+                        modifier = Modifier.fillMaxWidth().testTag("bot_token_input"),
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            unfocusedContainerColor = CyberSurface,
+                            focusedContainerColor = CyberSurfaceVariant,
+                            unfocusedBorderColor = CyberCardBorder,
+                            focusedBorderColor = CyberPrimary,
+                            unfocusedTextColor = CyberTextPrimary,
+                            focusedTextColor = CyberTextPrimary,
+                            unfocusedLabelColor = CyberTextSecondary,
+                            focusedLabelColor = CyberPrimary
+                        )
+                    )
+
+                    OutlinedTextField(
+                        value = priceInput,
+                        onValueChange = { priceInput = it },
+                        label = { Text("Harga Paket (Rupiah)") },
+                        placeholder = { Text("cth: 50000") },
+                        modifier = Modifier.fillMaxWidth().testTag("price_input"),
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            unfocusedContainerColor = CyberSurface,
+                            focusedContainerColor = CyberSurfaceVariant,
+                            unfocusedBorderColor = CyberCardBorder,
+                            focusedBorderColor = CyberPrimary,
+                            unfocusedTextColor = CyberTextPrimary,
+                            focusedTextColor = CyberTextPrimary,
+                            unfocusedLabelColor = CyberTextSecondary,
+                            focusedLabelColor = CyberPrimary
+                        )
+                    )
+
+                    // Model Selection Chips
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(
+                            text = "Pilih Model Groq AI Sesuai Paket:",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = CyberTextSecondary
+                        )
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            availableModels.forEach { model ->
+                                val isSelected = model == selectedModel
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(if (isSelected) CyberPrimary else CyberSurfaceVariant)
+                                        .border(
+                                            BorderStroke(
+                                                1.dp,
+                                                if (isSelected) CyberPrimary else CyberCardBorder
+                                            ),
+                                            RoundedCornerShape(8.dp)
+                                        )
+                                        .clickable { selectedModel = model }
+                                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = model,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isSelected) CyberBackground else CyberTextPrimary
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // Alerts
+                    isSuccessMessage?.let { msg ->
+                        Text(msg, color = CyberPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                    isErrorMessage?.let { err ->
+                        Text("ERROR: $err", color = CyberError, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+
+                    Button(
+                        onClick = {
+                            isSuccessMessage = null
+                            isErrorMessage = null
+                            val p = priceInput.toDoubleOrNull() ?: 0.0
+                            if (nameInput.isBlank() || whatsappInput.isBlank() || botTokenInput.isBlank()) {
+                                isErrorMessage = "Semua kolom form wajib diisi!"
+                                return@Button
+                            }
+                            isLoading = true
+                            viewModel.registerUser(
+                                name = nameInput,
+                                whatsapp = whatsappInput,
+                                token = botTokenInput,
+                                model = selectedModel,
+                                price = p,
+                                onSuccess = { user ->
+                                    isLoading = false
+                                    isSuccessMessage = "Client berhasil diregistrasikan ke database!"
+                                    
+                                    // Open WhatsApp with confirmation text
+                                    try {
+                                        val waMessage = """
+                                            Halo ${user.name},
+                                            
+                                            Registrasi bot Telegram Anda sukses diverifikasi! 🚀
+                                            
+                                            Detail Bot:
+                                            - Nama Bot: ${user.botFirstName}
+                                            - Username: @${user.botUsername}
+                                            - AI Model: ${user.selectedModel}
+                                            - Paket Harga: Rp ${String.format("%,.0f", user.price).replace(",", ".")}
+                                            - Status: AKTIF (24 Jam Non-Stop)
+                                            
+                                            Bot Anda kini aktif 24 jam non-stop ditenagai Groq AI super cepat! Silakan buka Telegram dan aktifkan chat melalui @${user.botUsername}.
+                                        """.trimIndent()
+                                        
+                                        val encodedMsg = java.net.URLEncoder.encode(waMessage, "UTF-8")
+                                        var cleanWa = user.whatsappNumber.trim()
+                                        if (cleanWa.startsWith("0")) {
+                                            cleanWa = "62" + cleanWa.substring(1)
+                                        }
+                                        val url = "https://api.whatsapp.com/send?phone=$cleanWa&text=$encodedMsg"
+                                        val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+                                            data = android.net.Uri.parse(url)
+                                        }
+                                        context.startActivity(intent)
+                                    } catch (e: Exception) {
+                                        Toast.makeText(context, "Gagal membuka WhatsApp: ${e.message}", Toast.LENGTH_SHORT).show()
+                                    }
+
+                                    // Clear input form
+                                    nameInput = ""
+                                    whatsappInput = ""
+                                    botTokenInput = ""
+                                    priceInput = "50000"
+                                },
+                                onError = { error ->
+                                    isLoading = false
+                                    isErrorMessage = error
+                                }
+                            )
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                            .testTag("submit_registration_btn"),
+                        enabled = !isLoading,
+                        colors = ButtonDefaults.buttonColors(containerColor = CyberPrimary)
+                    ) {
+                        if (isLoading) {
+                            CircularProgressIndicator(modifier = Modifier.size(24.dp), color = CyberBackground)
+                        } else {
+                            Text("Daftar & Kirim WhatsApp", color = CyberBackground, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        }
+
+        // Section header for Registered Users list
+        item {
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "DAFTAR BOT CLIENT AKTIF (${users.size})",
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Bold,
+                fontSize = 14.sp,
+                color = CyberSecondary
+            )
+        }
+
+        if (users.isEmpty()) {
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = CyberSurface),
+                    border = BorderStroke(1.dp, CyberCardBorder)
+                ) {
+                    Box(
+                        modifier = Modifier.padding(24.dp).fillMaxWidth(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            "Belum ada client yang terdaftar. Gunakan form di atas untuk menambah registrasi.",
+                            fontSize = 12.sp,
+                            color = CyberTextSecondary,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                        )
+                    }
+                }
+            }
+        } else {
+            items(users) { user ->
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = CyberSurface),
+                    border = BorderStroke(
+                        1.dp,
+                        if (user.isActive) CyberPrimary.copy(alpha = 0.3f) else CyberCardBorder
+                    )
+                ) {
+                    Column(
+                        modifier = Modifier.padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = user.name,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 15.sp,
+                                    color = CyberTextPrimary
+                                )
+                                Text(
+                                    text = "WA: ${user.whatsappNumber}",
+                                    fontSize = 12.sp,
+                                    color = CyberTextSecondary
+                                )
+                            }
+                            // Active status switch
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Text(
+                                    text = if (user.isActive) "RUNNING" else "STOPPED",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (user.isActive) CyberPrimary else CyberTextSecondary
+                                )
+                                Switch(
+                                    checked = user.isActive,
+                                    onCheckedChange = { viewModel.toggleUserActive(user) },
+                                    colors = SwitchDefaults.colors(
+                                        checkedThumbColor = CyberBackground,
+                                        checkedTrackColor = CyberPrimary,
+                                        uncheckedThumbColor = CyberTextSecondary,
+                                        uncheckedTrackColor = CyberSurfaceVariant
+                                    )
+                                )
+                            }
+                        }
+
+                        // Telegram credentials & resolved status info
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(CyberSurfaceVariant.copy(alpha = 0.6f), RoundedCornerShape(6.dp))
+                                .padding(8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.CheckCircle,
+                                contentDescription = "Telegram Status",
+                                tint = if (user.botUsername.isNotBlank()) CyberPrimary else CyberAccent,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Column {
+                                if (user.botUsername.isNotBlank()) {
+                                    Text(
+                                        text = "${user.botFirstName} (@${user.botUsername})",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = CyberTextPrimary
+                                    )
+                                } else {
+                                    Text(
+                                        text = "Menunggu uji koneksi pertama...",
+                                        fontSize = 12.sp,
+                                        color = CyberTextSecondary
+                                    )
+                                }
+                                Text(
+                                    text = "Token: ...${user.telegramToken.takeLast(12)}",
+                                    fontSize = 10.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    color = CyberTextSecondary
+                                )
+                            }
+                        }
+
+                        // Model & Price Badges
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Box(
+                                    modifier = Modifier
+                                        .background(CyberSecondary.copy(alpha = 0.15f), RoundedCornerShape(4.dp))
+                                        .border(BorderStroke(1.dp, CyberSecondary.copy(alpha = 0.3f)), RoundedCornerShape(4.dp))
+                                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                                ) {
+                                    Text(user.selectedModel, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = CyberSecondary)
+                                }
+                                Box(
+                                    modifier = Modifier
+                                        .background(CyberAccent.copy(alpha = 0.15f), RoundedCornerShape(4.dp))
+                                        .border(BorderStroke(1.dp, CyberAccent.copy(alpha = 0.3f)), RoundedCornerShape(4.dp))
+                                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                                ) {
+                                    Text(
+                                        text = "Rp ${String.format("%,.0f", user.price).replace(",", ".")}",
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = CyberAccent
+                                    )
+                                }
+                            }
+
+                            // Extra actions like Delete and Send Manual WhatsApp Confirmation
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                IconButton(
+                                    onClick = {
+                                        // Open WhatsApp with confirmation text
+                                        try {
+                                            val waMessage = """
+                                                Halo ${user.name},
+                                                
+                                                Berikut pengingat konfigurasi bot Anda:
+                                                - Nama Bot: ${user.botFirstName}
+                                                - Username: @${user.botUsername}
+                                                - AI Model: ${user.selectedModel}
+                                                - Paket Harga: Rp ${String.format("%,.0f", user.price).replace(",", ".")}
+                                                - Status: ${if (user.isActive) "AKTIF (RUNNING)" else "NONAKTIF (STOPPED)"}
+                                                
+                                                Ditenagai asisten AI Groq super cepat 24 jam non-stop!
+                                            """.trimIndent()
+                                            
+                                            val encodedMsg = java.net.URLEncoder.encode(waMessage, "UTF-8")
+                                            var cleanWa = user.whatsappNumber.trim()
+                                            if (cleanWa.startsWith("0")) {
+                                                cleanWa = "62" + cleanWa.substring(1)
+                                            }
+                                            val url = "https://api.whatsapp.com/send?phone=$cleanWa&text=$encodedMsg"
+                                            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+                                                data = android.net.Uri.parse(url)
+                                            }
+                                            context.startActivity(intent)
+                                        } catch (e: Exception) {
+                                            Toast.makeText(context, "Gagal membuka WhatsApp: ${e.message}", Toast.LENGTH_SHORT).show()
+                                        }
+                                    },
+                                    modifier = Modifier.size(32.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Send,
+                                        contentDescription = "Hubungi WA",
+                                        tint = CyberSecondary,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+
+                                IconButton(
+                                    onClick = { viewModel.deleteRegisteredUser(user.id) },
+                                    modifier = Modifier.size(32.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Delete,
+                                        contentDescription = "Hapus Client",
+                                        tint = CyberError,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+

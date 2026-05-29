@@ -93,6 +93,13 @@ class BotViewModel(private val repository: BotRepository) : ViewModel() {
             initialValue = emptyList()
         )
 
+    val registeredUsersState: StateFlow<List<RegisteredUser>> = repository.registeredUsersFlow
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
+
     private var pollingJob: Job? = null
     private var lastUpdateId: Long = 0
 
@@ -412,6 +419,76 @@ class BotViewModel(private val repository: BotRepository) : ViewModel() {
             _tokopayInvoiceState.value = updated
             _isTokopayLoading.value = false
             repository.addLog("SUCCESS", "Tokopay Webhook: Pembayaran Invoice ${currentInvoice.refId} sebesar Rp ${currentInvoice.amount} terverifikasi LUNAS (PAID)!")
+        }
+    }
+
+    fun registerUser(
+        name: String,
+        whatsapp: String,
+        token: String,
+        model: String,
+        price: Double,
+        onSuccess: (RegisteredUser) -> Unit,
+        onError: (String) -> Unit
+    ) {
+        val trimmedToken = token.trim()
+        val trimmedName = name.trim()
+        val trimmedWhatsapp = whatsapp.trim()
+
+        if (trimmedName.isEmpty() || trimmedToken.isEmpty() || trimmedWhatsapp.isEmpty()) {
+            onError("Nama, nomor WhatsApp, dan Token Bot Telegram wajib diisi!")
+            return
+        }
+
+        viewModelScope.launch {
+            try {
+                repository.addLog("INFO", "Mencoba validasi bot token ...${trimmedToken.takeLast(6)}")
+                val botInfo = repository.validateTelegramBot(trimmedToken)
+                
+                val newUser = RegisteredUser(
+                    name = trimmedName,
+                    whatsappNumber = trimmedWhatsapp,
+                    telegramToken = trimmedToken,
+                    selectedModel = model,
+                    price = price,
+                    isActive = true,
+                    botUsername = botInfo.username ?: "",
+                    botFirstName = botInfo.firstName
+                )
+                
+                val insertedId = repository.saveRegisteredUser(newUser)
+                val userWithId = newUser.copy(id = insertedId)
+                repository.addLog("SUCCESS", "Registrasi Berhasil! Bot @${botInfo.username} ditambahkan untuk $trimmedName seharga Rp $price")
+                onSuccess(userWithId)
+            } catch (e: Exception) {
+                val errMsg = e.localizedMessage ?: e.message ?: "Token bot tidak valid"
+                repository.addLog("ERROR", "Registrasi Gagal: $errMsg")
+                onError(errMsg)
+            }
+        }
+    }
+
+    fun deleteRegisteredUser(userId: Long) {
+        viewModelScope.launch {
+            try {
+                repository.deleteRegisteredUserById(userId)
+                repository.addLog("SUCCESS", "User dengan ID $userId berhasil dihapus.")
+            } catch (e: Exception) {
+                repository.addLog("ERROR", "Gagal menghapus user: ${e.message}")
+            }
+        }
+    }
+
+    fun toggleUserActive(user: RegisteredUser) {
+        viewModelScope.launch {
+            try {
+                val updated = user.copy(isActive = !user.isActive)
+                repository.saveRegisteredUser(updated)
+                val statusStr = if (updated.isActive) "diaktifkan" else "dinonaktifkan"
+                repository.addLog("INFO", "Bot [${user.name}] $statusStr.")
+            } catch (e: Exception) {
+                repository.addLog("ERROR", "Gagal merubah status aktif user [${user.name}]: ${e.message}")
+            }
         }
     }
 
