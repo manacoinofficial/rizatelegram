@@ -5,7 +5,7 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 
-@Database(entities = [BotSettings::class, BotLog::class, RegisteredUser::class], version = 5, exportSchema = false)
+@Database(entities = [BotSettings::class, BotLog::class, RegisteredUser::class], version = 6, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun botDao(): BotDao
 

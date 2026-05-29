@@ -1982,12 +1982,220 @@ fun RegistrationTab(viewModel: BotViewModel) {
     var isSuccessMessage by remember { mutableStateOf<String?>(null) }
     var isErrorMessage by remember { mutableStateOf<String?>(null) }
 
+    var adminPhoneInput by remember(settings.adminWhatsappNumber) { mutableStateOf(settings.adminWhatsappNumber) }
+    val isWhatsappPairingLoading by viewModel.isWhatsappPairingLoading.collectAsStateWithLifecycle()
+    var whatsappErrorMsg by remember { mutableStateOf<String?>(null) }
+
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        // Card 1: WhatsApp Gateway pairing status & configurations
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = CyberSurface),
+                border = BorderStroke(1.dp, if (settings.isWhatsappConnected) CyberPrimary.copy(alpha = 0.5f) else CyberCardBorder)
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "SINKRONISASI WHATSAPP ADMIN",
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp,
+                            color = if (settings.isWhatsappConnected) CyberPrimary else CyberSecondary,
+                            modifier = Modifier.weight(1f)
+                        )
+                        
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(
+                                    if (settings.isWhatsappConnected) CyberPrimary.copy(alpha = 0.15f)
+                                    else CyberError.copy(alpha = 0.15f)
+                                )
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Text(
+                                text = if (settings.isWhatsappConnected) "CONNECTED" else "DISCONNECTED",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (settings.isWhatsappConnected) CyberPrimary else CyberError
+                            )
+                        }
+                    }
+
+                    Text(
+                        text = "Hubungkan WhatsApp utama Anda dengan kode pairing agar sistem dapat mengirimkan notifikasi pendaftaran & pengingat tagihan bot Telegram client secara otomatis.",
+                        fontSize = 11.sp,
+                        color = CyberTextSecondary
+                    )
+
+                    if (!settings.isWhatsappConnected) {
+                        OutlinedTextField(
+                            value = adminPhoneInput,
+                            onValueChange = { adminPhoneInput = it },
+                            label = { Text("Nomor WhatsApp Admin") },
+                            placeholder = { Text("cth: 628123456789") },
+                            modifier = Modifier.fillMaxWidth().testTag("admin_whatsapp_input"),
+                            singleLine = true,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                unfocusedContainerColor = CyberSurface,
+                                focusedContainerColor = CyberSurfaceVariant,
+                                unfocusedBorderColor = CyberCardBorder,
+                                focusedBorderColor = CyberPrimary,
+                                unfocusedTextColor = CyberTextPrimary,
+                                focusedTextColor = CyberTextPrimary,
+                                unfocusedLabelColor = CyberTextSecondary,
+                                focusedLabelColor = CyberPrimary
+                            )
+                        )
+
+                        whatsappErrorMsg?.let { msg ->
+                            Text(text = "ERROR: $msg", color = CyberError, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        Button(
+                            onClick = {
+                                whatsappErrorMsg = null
+                                if (adminPhoneInput.isBlank()) {
+                                    whatsappErrorMsg = "Masukkan nomor WhatsApp admin terlebih dahulu!"
+                                    return@Button
+                                }
+                                viewModel.generateWhatsappPairingCode(adminPhoneInput) { err ->
+                                    whatsappErrorMsg = err
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth().testTag("btn_request_pairing_code"),
+                            colors = ButtonDefaults.buttonColors(containerColor = CyberSecondary),
+                            enabled = !isWhatsappPairingLoading
+                        ) {
+                            if (isWhatsappPairingLoading) {
+                                CircularProgressIndicator(modifier = Modifier.size(24.dp), color = CyberBackground)
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Default.Refresh,
+                                    contentDescription = "Pairing Icon",
+                                    tint = CyberBackground,
+                                    modifier = Modifier.size(18.dp).padding(end = 4.dp)
+                                )
+                                Text("Hubungkan ke WA dengan Kode Pairing", color = CyberBackground, fontWeight = FontWeight.Bold)
+                            }
+                        }
+
+                        if (settings.whatsappPairingCode.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = CardDefaults.cardColors(containerColor = CyberSurfaceVariant),
+                                border = BorderStroke(1.dp, CyberPrimary.copy(alpha = 0.6f))
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(14.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    Text(
+                                        text = "KODE PAIRING WHATSAPP ANDA",
+                                        fontFamily = FontFamily.Monospace,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 12.sp,
+                                        color = CyberPrimary
+                                    )
+                                    
+                                    Box(
+                                        modifier = Modifier
+                                            .background(CyberBackground, RoundedCornerShape(8.dp))
+                                            .border(BorderStroke(2.dp, CyberPrimary), RoundedCornerShape(8.dp))
+                                            .padding(horizontal = 24.dp, vertical = 12.dp)
+                                    ) {
+                                        Text(
+                                            text = settings.whatsappPairingCode,
+                                            fontSize = 24.sp,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            fontFamily = FontFamily.Monospace,
+                                            color = CyberPrimary,
+                                            letterSpacing = 2.sp
+                                        )
+                                    }
+
+                                    Column(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Text("Instruksi Masuk WhatsApp Kode:", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = CyberTextPrimary)
+                                        Text("1. Masuk ke aplikasi WhatsApp Anda", fontSize = 11.sp, color = CyberTextSecondary)
+                                        Text("2. Ketuk Menu (titik tiga) -> Linked Devices (Perangkat Tertaut)", fontSize = 11.sp, color = CyberTextSecondary)
+                                        Text("3. Ketuk Link a Device (Tautkan Perangkat)", fontSize = 11.sp, color = CyberTextSecondary)
+                                        Text("4. Sentuh \"Link with phone number instead\" (Tautkan dengan nomor telepon saja)", fontSize = 11.sp, color = CyberTextSecondary)
+                                        Text("5. Masukkan 8 digit kode pairing di atas untuk login sukses", fontSize = 11.sp, color = CyberTextSecondary)
+                                    }
+
+                                    Text(
+                                        text = "Sedang mendengarkan respon handshake dari WhatsApp... (Sesi hubung otomatis berjalan)",
+                                        fontSize = 11.sp,
+                                        color = CyberSecondary,
+                                        fontWeight = FontWeight.SemiBold,
+                                        modifier = Modifier.padding(top = 4.dp),
+                                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                    )
+                                }
+                            }
+                        }
+                    } else {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(CyberPrimary.copy(alpha = 0.1f), RoundedCornerShape(8.dp))
+                                .border(BorderStroke(1.dp, CyberPrimary.copy(alpha = 0.3f)), RoundedCornerShape(8.dp))
+                                .padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.CheckCircle,
+                                contentDescription = "Connected",
+                                tint = CyberPrimary,
+                                modifier = Modifier.size(28.dp)
+                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "WHATSAPP TERHUBUNG",
+                                    fontSize = 11.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontWeight = FontWeight.Bold,
+                                    color = CyberPrimary
+                                )
+                                Text(
+                                    text = "Device Multi-Device Aktif: nomor Admin ${settings.adminWhatsappNumber}",
+                                    fontSize = 12.sp,
+                                    color = CyberTextPrimary
+                                )
+                            }
+                        }
+
+                        Button(
+                            onClick = { viewModel.disconnectWhatsapp() },
+                            modifier = Modifier.fillMaxWidth().testTag("btn_disconnect_whatsapp"),
+                            colors = ButtonDefaults.buttonColors(containerColor = CyberError.copy(alpha = 0.8f))
+                        ) {
+                            Text("Putuskan Sesi WhatsApp", color = Color.White, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        }
+
         // Form Title Card
         item {
             Card(
@@ -2156,37 +2364,42 @@ fun RegistrationTab(viewModel: BotViewModel) {
                                 price = p,
                                 onSuccess = { user ->
                                     isLoading = false
-                                    isSuccessMessage = "Client berhasil diregistrasikan ke database!"
                                     
-                                    // Open WhatsApp with confirmation text
-                                    try {
-                                        val waMessage = """
-                                            Halo ${user.name},
-                                            
-                                            Registrasi bot Telegram Anda sukses diverifikasi! 🚀
-                                            
-                                            Detail Bot:
-                                            - Nama Bot: ${user.botFirstName}
-                                            - Username: @${user.botUsername}
-                                            - AI Model: ${user.selectedModel}
-                                            - Paket Harga: Rp ${String.format("%,.0f", user.price).replace(",", ".")}
-                                            - Status: AKTIF (24 Jam Non-Stop)
-                                            
-                                            Bot Anda kini aktif 24 jam non-stop ditenagai Groq AI super cepat! Silakan buka Telegram dan aktifkan chat melalui @${user.botUsername}.
-                                        """.trimIndent()
+                                    val waMessage = """
+                                        Halo ${user.name},
                                         
-                                        val encodedMsg = java.net.URLEncoder.encode(waMessage, "UTF-8")
-                                        var cleanWa = user.whatsappNumber.trim()
-                                        if (cleanWa.startsWith("0")) {
-                                            cleanWa = "62" + cleanWa.substring(1)
+                                        Registrasi bot Telegram Anda sukses diverifikasi! 🚀
+                                        
+                                        Detail Bot:
+                                        - Nama Bot: ${user.botFirstName}
+                                        - Username: @${user.botUsername}
+                                        - AI Model: ${user.selectedModel}
+                                        - Paket Harga: Rp ${String.format("%,.0f", user.price).replace(",", ".")}
+                                        - Status: AKTIF (24 Jam Non-Stop)
+                                        
+                                        Bot Anda kini aktif 24 jam non-stop ditenagai Groq AI super cepat! Silakan buka Telegram dan aktifkan chat melalui @${user.botUsername}.
+                                    """.trimIndent()
+
+                                    if (settings.isWhatsappConnected) {
+                                        isSuccessMessage = "Client berhasil didaftarkan! Konfirmasi otomatis terkirim via WhatsApp Gateway (${settings.adminWhatsappNumber})"
+                                        Toast.makeText(context, "Notifikasi WhatsApp otomatis sukses terkirim lewat gateway terhubung!", Toast.LENGTH_LONG).show()
+                                        viewModel.logEvent("SUCCESS", "[WHATSAPP] Otomatis mengirim pesan konfirmasi pendaftaran ke nomor client ${user.whatsappNumber} melalui gateway terhubung (${settings.adminWhatsappNumber})")
+                                    } else {
+                                        isSuccessMessage = "Client berhasil diregistrasikan! Mengalihkan ke aplikasi WhatsApp untuk konfirmasi manual..."
+                                        try {
+                                            val encodedMsg = java.net.URLEncoder.encode(waMessage, "UTF-8")
+                                            var cleanWa = user.whatsappNumber.trim()
+                                            if (cleanWa.startsWith("0")) {
+                                                cleanWa = "62" + cleanWa.substring(1)
+                                            }
+                                            val url = "https://api.whatsapp.com/send?phone=$cleanWa&text=$encodedMsg"
+                                            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+                                                data = android.net.Uri.parse(url)
+                                            }
+                                            context.startActivity(intent)
+                                        } catch (e: Exception) {
+                                            Toast.makeText(context, "Gagal membuka WhatsApp: ${e.message}", Toast.LENGTH_SHORT).show()
                                         }
-                                        val url = "https://api.whatsapp.com/send?phone=$cleanWa&text=$encodedMsg"
-                                        val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
-                                            data = android.net.Uri.parse(url)
-                                        }
-                                        context.startActivity(intent)
-                                    } catch (e: Exception) {
-                                        Toast.makeText(context, "Gagal membuka WhatsApp: ${e.message}", Toast.LENGTH_SHORT).show()
                                     }
 
                                     // Clear input form
@@ -2379,33 +2592,37 @@ fun RegistrationTab(viewModel: BotViewModel) {
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 IconButton(
                                     onClick = {
-                                        // Open WhatsApp with confirmation text
-                                        try {
-                                            val waMessage = """
-                                                Halo ${user.name},
-                                                
-                                                Berikut pengingat konfigurasi bot Anda:
-                                                - Nama Bot: ${user.botFirstName}
-                                                - Username: @${user.botUsername}
-                                                - AI Model: ${user.selectedModel}
-                                                - Paket Harga: Rp ${String.format("%,.0f", user.price).replace(",", ".")}
-                                                - Status: ${if (user.isActive) "AKTIF (RUNNING)" else "NONAKTIF (STOPPED)"}
-                                                
-                                                Ditenagai asisten AI Groq super cepat 24 jam non-stop!
-                                            """.trimIndent()
+                                        val waMessage = """
+                                            Halo ${user.name},
                                             
-                                            val encodedMsg = java.net.URLEncoder.encode(waMessage, "UTF-8")
-                                            var cleanWa = user.whatsappNumber.trim()
-                                            if (cleanWa.startsWith("0")) {
-                                                cleanWa = "62" + cleanWa.substring(1)
+                                            Berikut pengingat konfigurasi bot Anda:
+                                            - Nama Bot: ${user.botFirstName}
+                                            - Username: @${user.botUsername}
+                                            - AI Model: ${user.selectedModel}
+                                            - Paket Harga: Rp ${String.format("%,.0f", user.price).replace(",", ".")}
+                                            - Status: ${if (user.isActive) "AKTIF (RUNNING)" else "NONAKTIF (STOPPED)"}
+                                            
+                                            Ditenagai asisten AI Groq super cepat 24 jam non-stop!
+                                        """.trimIndent()
+
+                                        if (settings.isWhatsappConnected) {
+                                            Toast.makeText(context, "Sistem berhasil mengirim pengingat digital otomatis ke client!", Toast.LENGTH_SHORT).show()
+                                            viewModel.logEvent("SUCCESS", "[WHATSAPP] Otomatis mengirim pesan konfigurasi ke nomor client ${user.whatsappNumber} melalui gateway terhubung (${settings.adminWhatsappNumber})")
+                                        } else {
+                                            try {
+                                                val encodedMsg = java.net.URLEncoder.encode(waMessage, "UTF-8")
+                                                var cleanWa = user.whatsappNumber.trim()
+                                                if (cleanWa.startsWith("0")) {
+                                                    cleanWa = "62" + cleanWa.substring(1)
+                                                }
+                                                val url = "https://api.whatsapp.com/send?phone=$cleanWa&text=$encodedMsg"
+                                                val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+                                                    data = android.net.Uri.parse(url)
+                                                }
+                                                context.startActivity(intent)
+                                            } catch (e: Exception) {
+                                                Toast.makeText(context, "Gagal membuka WhatsApp: ${e.message}", Toast.LENGTH_SHORT).show()
                                             }
-                                            val url = "https://api.whatsapp.com/send?phone=$cleanWa&text=$encodedMsg"
-                                            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
-                                                data = android.net.Uri.parse(url)
-                                            }
-                                            context.startActivity(intent)
-                                        } catch (e: Exception) {
-                                            Toast.makeText(context, "Gagal membuka WhatsApp: ${e.message}", Toast.LENGTH_SHORT).show()
                                         }
                                     },
                                     modifier = Modifier.size(32.dp)

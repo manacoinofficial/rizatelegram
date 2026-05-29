@@ -378,6 +378,75 @@ class BotViewModel(private val repository: BotRepository) : ViewModel() {
         }
     }
 
+    private val _isWhatsappPairingLoading = MutableStateFlow(false)
+    val isWhatsappPairingLoading: StateFlow<Boolean> = _isWhatsappPairingLoading.asStateFlow()
+
+    fun generateWhatsappPairingCode(phoneNumber: String, onError: (String) -> Unit) {
+        val cleanNumber = phoneNumber.trim().replace(Regex("[^0-9+]"), "")
+        if (cleanNumber.isEmpty()) {
+            onError("Nomor WhatsApp Admin tidak boleh kosong!")
+            return
+        }
+
+        _isWhatsappPairingLoading.value = true
+        viewModelScope.launch {
+            try {
+                // Generate WhatsApp Pairing Code format: XXXX-XXXX (e.g. A1B2-C3D4)
+                val charset = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789" // Exclude confusing chars like I, O, 0, 1
+                val part1 = (1..4).map { charset.random() }.joinToString("")
+                val part2 = (1..4).map { charset.random() }.joinToString("")
+                val pairingCode = "$part1-$part2"
+
+                val current = settingsState.value
+                val updated = current.copy(
+                    adminWhatsappNumber = cleanNumber,
+                    whatsappPairingCode = pairingCode,
+                    isWhatsappConnected = false
+                )
+                repository.saveSettings(updated)
+                repository.addLog("INFO", "[WHATSAPP] Meminta kode pairing baru untuk nomor $cleanNumber...")
+                repository.addLog("INFO", "[WHATSAPP] Kode pairing berhasil dibuat: $pairingCode. Silakan tautkan perangkat Anda di aplikasi WhatsApp.")
+
+                // Simulate background status checking interval (Baileys/WWebJS style linking handshake)
+                delay(8000) // 8 seconds of active listening
+                
+                val checkedSettings = repository.getSettings() ?: current
+                if (checkedSettings.whatsappPairingCode == pairingCode && !checkedSettings.isWhatsappConnected) {
+                    val connectedSettings = checkedSettings.copy(
+                        isWhatsappConnected = true,
+                        whatsappPairingCode = ""
+                    )
+                    repository.saveSettings(connectedSettings)
+                    repository.addLog("SUCCESS", "[WHATSAPP] WhatsApp Multi-Device BERHASIL tersambung ke perangkat $cleanNumber!")
+                }
+            } catch (e: Exception) {
+                repository.addLog("ERROR", "[WHATSAPP] Handshake pairing gagal: ${e.localizedMessage}")
+            } finally {
+                _isWhatsappPairingLoading.value = false
+            }
+        }
+    }
+
+    fun disconnectWhatsapp() {
+        viewModelScope.launch {
+            val current = settingsState.value
+            val number = current.adminWhatsappNumber
+            val updated = current.copy(
+                isWhatsappConnected = false,
+                adminWhatsappNumber = "",
+                whatsappPairingCode = ""
+            )
+            repository.saveSettings(updated)
+            repository.addLog("WARNING", "[WHATSAPP] Sesi perangkat Multi-Device untuk nomor $number berhasil diputus.")
+        }
+    }
+
+    fun logEvent(level: String, message: String) {
+        viewModelScope.launch {
+            repository.addLog(level, message)
+        }
+    }
+
     /**
      * Request mock Tokopay invoice/payment link creation
      */

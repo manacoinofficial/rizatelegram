@@ -19,7 +19,12 @@ data class BotSettings(
     val tokopayMerchantId: String = "",
     val tokopayApiKey: String = "",
     val tokopaySecretKey: String = "",
-    val tokopayIsActive: Boolean = false
+    val tokopayIsActive: Boolean = false,
+
+    // WhatsApp Pairing Connection Fields
+    val adminWhatsappNumber: String = "",
+    val isWhatsappConnected: Boolean = false,
+    val whatsappPairingCode: String = ""
 )
 
 @Entity(tableName = "registered_users")
