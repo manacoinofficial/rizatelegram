@@ -195,6 +195,11 @@ class BotService : Service() {
                 )
             }
             repository.addLog("SUCCESS", "Bot @${info.username} milik [${bot.name}] aktif di background.")
+            try {
+                repository.setTelegramCommands(bot.token)
+            } catch (exCmd: Exception) {
+                Log.e("BotService", "Gagal mendaftarkan menu untuk bot [${bot.name}]: ${exCmd.message}")
+            }
         } catch (e: Exception) {
             repository.addLog("ERROR", "Uji koneksi gagal untuk bot [${bot.name}]: ${e.message}")
             delay(15000)
@@ -263,6 +268,129 @@ class BotService : Service() {
     ) {
         val trimmedText = textMessage.trim()
         val messageId = incomingMessage.messageId
+
+        if (trimmedText.equals("/start", ignoreCase = true)) {
+            val welcomeText = """
+                👋 *Halo $senderName! Selamat datang di AI Bot Setup!*
+                
+                Saya adalah asisten AI Anda yang siap melayani 24 jam non-stop ditenagai oleh Groq AI super cepat.
+                
+                🤖 *Bagian Pendaftaran Bot Baru:*
+                Anda dapat mendaftarkan bot Telegram Anda sendiri untuk di-host di sistem kami dengan menggunakan perintah `/register`:
+                Format: `/register <Nama Anda> | <No WhatsApp> | <Token BotFather>`
+                Contoh: `/register Riza | 08123456789 | 12345:AAH_xyz`
+                
+                *Daftar Perintah Menarik yang Tersedia:*
+                🎙️ `/tts <teks>` - Mengubah teks menjadi audio suara
+                🖼️ `/imagen <deskripsi>` - Membuat gambar AI dari deskripsi
+                🎬 `/veo3 <deskripsi>` - Membuat video/animasi AI dari deskripsi
+                💥 `/spamngl <link_ngl> | <pesan> | <jumlah>` - Kirim spam pesan NGL Link
+                ✨ `/hdvideo` - Tingkatkan kualitas video / lampiran video menjadi HD (Bisa dengan me-reply video/dokumen)
+                🔌 `/cektagihanpln <id_pelanggan>` - Memeriksa tagihan listrik PLN
+                📰 `/ccn` atau `/cnn` - Membaca berita hangat CNN Indonesia terbaru
+                
+                Silakan ketik atau pilih perintah yang Anda inginkan di bawah! 👇
+            """.trimIndent()
+            
+            repository.sendTelegramMessage(
+                token = token,
+                chatId = chatId,
+                text = welcomeText,
+                replyToMessageId = messageId
+            )
+            return
+        }
+
+        if (trimmedText.startsWith("/register")) {
+            val paramsText = trimmedText.removePrefix("/register").trim()
+            if (paramsText.isEmpty()) {
+                repository.sendTelegramMessage(
+                    token = token,
+                    chatId = chatId,
+                    text = "Gunakan perintah ini untuk meregistrasikan bot Telegram baru Anda.\n\n*Format:* `/register <nama_anda> | <nomor_whatsapp> | <bot_token_telegram>`\n\n*Contoh:* `/register Joko | 08123456789 | 1234567890:ABCDefGHiJklmnOpqrstuvw_xyz`\n\n_Pastikan bot token diperoleh secara gratis dari @BotFather di Telegram._",
+                    replyToMessageId = messageId
+                )
+                return
+            }
+            
+            val parts = paramsText.split("|").map { it.trim() }
+            if (parts.size < 3) {
+                repository.sendTelegramMessage(
+                    token = token,
+                    chatId = chatId,
+                    text = "Format parameter salah atau kurang lengkap.\n\n*Format:* `/register <nama_anda> | <nomor_whatsapp> | <bot_token_telegram>`\n\n*Contoh:* `/register Joko | 08123456789 | 1234567890:ABCDefGHiJklmn...`",
+                    replyToMessageId = messageId
+                )
+                return
+            }
+            
+            val clientName = parts[0]
+            val clientWhatsapp = parts[1]
+            val clientToken = parts[2]
+            
+            if (clientName.isEmpty() || clientWhatsapp.isEmpty() || clientToken.isEmpty()) {
+                repository.sendTelegramMessage(
+                    token = token,
+                    chatId = chatId,
+                    text = "⚠️ Nama, nomor WhatsApp, dan Token Bot Telegram wajib diisi secara lengkap!",
+                    replyToMessageId = messageId
+                )
+                return
+            }
+            
+            try {
+                repository.addLog("INFO", "Bot [$botName]: Memproses registrasi bot baru untuk $clientName via Telegram...")
+                
+                val botInfo = repository.validateTelegramBot(clientToken)
+                val defaultModel = "llama-3.1-8b-instant"
+                val priceDefault = 50000.0
+                
+                val newUser = RegisteredUser(
+                    name = clientName,
+                    whatsappNumber = clientWhatsapp,
+                    telegramToken = clientToken,
+                    selectedModel = defaultModel,
+                    price = priceDefault,
+                    isActive = true,
+                    botUsername = botInfo.username ?: "",
+                    botFirstName = botInfo.firstName
+                )
+                
+                repository.saveRegisteredUser(newUser)
+                
+                val successMessage = """
+                    ✅ *REGISTRASI BOT BERHASIL!* 🚀
+                    
+                    Halo *$clientName*, bot Anda telah berhasil di-host dan diaktifkan di platform kami!
+                    
+                    *Detail Layanan Anda:*
+                    - *Nama Bot:* ${botInfo.firstName}
+                    - *Username Bot:* @${botInfo.username}
+                    - *Model Utama:* $defaultModel
+                    - *Paket Layanan:* Aktif 24 Jam Non-Stop
+                    
+                    Bot Anda kini siap digunakan dan memproses perintah otomatis dari user Anda. Silakan mulai chat dengan @${botInfo.username}!
+                """.trimIndent()
+                
+                repository.sendTelegramMessage(
+                    token = token,
+                    chatId = chatId,
+                    text = successMessage,
+                    replyToMessageId = messageId
+                )
+                repository.addLog("SUCCESS", "Registrasi Berhasil via Telegram! Bot @${botInfo.username} didaftarkan oleh $clientName")
+            } catch (e: Exception) {
+                val errMsg = e.localizedMessage ?: e.message ?: "Error"
+                repository.addLog("ERROR", "Registrasi via Telegram gagal: $errMsg")
+                repository.sendTelegramMessage(
+                    token = token,
+                    chatId = chatId,
+                    text = "❌ *Registrasi Gagal!*\n\n*Penyebab:* $errMsg\n\nHarap periksa kembali token bot Anda dari @BotFather dan pastikan formatnya sudah benar.",
+                    replyToMessageId = messageId
+                )
+            }
+            return
+        }
         
         if (trimmedText.startsWith("/tts")) {
             val targetText = trimmedText.removePrefix("/tts").trim()
@@ -610,6 +738,29 @@ class BotService : Service() {
                 repository.addLog("ERROR", "Bot [$botName] gagal cek tagihan PLN: $errMsg")
                 try {
                     repository.sendTelegramMessage(token, chatId, "Gagal memeriksa tagihan PLN: $errMsg", replyToMessageId = messageId)
+                } catch (ignored: Exception) {}
+            }
+            return
+        }
+        
+        if (trimmedText.startsWith("/ccn") || trimmedText.startsWith("/cnn")) {
+            try {
+                repository.addLog("INFO", "Bot [$botName]: Mengambil berita terbaru dari CNN Indonesia...")
+                val apiResponse = repository.getCnnNews()
+                val formattedNews = repository.formatCnnNews(apiResponse)
+                
+                repository.sendTelegramMessage(
+                    token = token,
+                    chatId = chatId,
+                    text = formattedNews,
+                    replyToMessageId = messageId
+                )
+                repository.addLog("SUCCESS", "Bot [$botName]: Sukses mengirim berita CNN ke @$senderName")
+            } catch (e: Exception) {
+                val errMsg = e.localizedMessage ?: e.message ?: "Error"
+                repository.addLog("ERROR", "Bot [$botName] gagal mengambil berita CNN: $errMsg")
+                try {
+                    repository.sendTelegramMessage(token, chatId, "Gagal mengambil berita: $errMsg", replyToMessageId = messageId)
                 } catch (ignored: Exception) {}
             }
             return

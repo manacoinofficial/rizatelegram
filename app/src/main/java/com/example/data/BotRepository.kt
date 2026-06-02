@@ -481,7 +481,136 @@ class BotRepository(private val botDao: BotDao) {
                 .replace("\"", "")
                 .replace("[", "")
                 .replace("]", "")
-                .replace(",", "\n")
+        }
+    }
+
+    /**
+     * Call CNN News API
+     */
+    suspend fun getCnnNews(): String = withContext(Dispatchers.IO) {
+        val url = "https://api.nexray.eu.cc/berita/cnn"
+        val request = Request.Builder().url(url).get().build()
+        
+        val client = OkHttpClient.Builder()
+            .connectTimeout(30, TimeUnit.SECONDS)
+            .readTimeout(30, TimeUnit.SECONDS)
+            .build()
+            
+        client.newCall(request).execute().use { response ->
+            val body = response.body?.string() ?: ""
+            if (!response.isSuccessful) {
+                throw Exception("API Error ${response.code}: $body")
+            }
+            body
+        }
+    }
+
+    fun formatCnnNews(jsonStr: String): String {
+        try {
+            val jsonObject = org.json.JSONObject(jsonStr)
+            val sb = java.lang.StringBuilder()
+            
+            // Try to find the array of news
+            val newsArray = jsonObject.optJSONArray("result") 
+                ?: jsonObject.optJSONArray("data")
+                ?: jsonObject.optJSONArray("articles")
+                ?: jsonObject.optJSONArray("news")
+                ?: jsonObject.optJSONArray("berita")
+                
+            if (newsArray != null && newsArray.length() > 0) {
+                val limit = minOf(newsArray.length(), 6)
+                sb.append("📰 *CNN INDONESIA - BERITA TERBARU*\n\n")
+                for (i in 0 until limit) {
+                    val item = newsArray.optJSONObject(i) ?: continue
+                    val title = item.optString("title") ?: item.optString("judul") ?: ""
+                    val link = item.optString("link") ?: item.optString("url") ?: ""
+                    val desc = item.optString("description") ?: item.optString("desc") ?: item.optString("content") ?: ""
+                    
+                    if (title.isNotEmpty()) {
+                        sb.append("${i + 1}. *${title.trim()}*\n")
+                        if (desc.isNotEmpty()) {
+                            val cleanDesc = if (desc.length > 120) desc.substring(0, 115) + "..." else desc
+                            sb.append("   _${cleanDesc.trim()}_\n")
+                        }
+                        if (link.isNotEmpty()) {
+                            sb.append("   🔗 [Baca Selengkapnya](${link.trim()})\n")
+                        }
+                        sb.append("\n")
+                    }
+                }
+            } else {
+                // Let's check if the root element itself is an array
+                try {
+                    val rootArray = org.json.JSONArray(jsonStr)
+                    val limit = minOf(rootArray.length(), 6)
+                    sb.append("📰 *CNN INDONESIA - BERITA TERBARU*\n\n")
+                    for (i in 0 until limit) {
+                        val item = rootArray.optJSONObject(i) ?: continue
+                        val title = item.optString("title") ?: item.optString("judul") ?: ""
+                        val link = item.optString("link") ?: item.optString("url") ?: ""
+                        val desc = item.optString("description") ?: item.optString("desc") ?: item.optString("content") ?: ""
+                        
+                        if (title.isNotEmpty()) {
+                            sb.append("${i + 1}. *${title.trim()}*\n")
+                            if (desc.isNotEmpty()) {
+                                val cleanDesc = if (desc.length > 120) desc.substring(0, 115) + "..." else desc
+                                sb.append("   _${cleanDesc.trim()}_\n")
+                            }
+                            if (link.isNotEmpty()) {
+                                sb.append("   🔗 [Baca Selengkapnya](${link.trim()})\n")
+                            }
+                            sb.append("\n")
+                        }
+                    }
+                } catch (arrEx: Exception) {
+                    // Try formatting generally
+                    return formatJsonToIndonesian(jsonStr)
+                }
+            }
+            if (sb.isEmpty()) {
+                return "Tidak ada berita ditemukan dalam respon API."
+            }
+            return sb.toString()
+        } catch (e: Exception) {
+            // General parsing fallback
+            return "Gagal memproses berita: ${e.message}\nRespon asli:\n$jsonStr"
+        }
+    }
+
+    /**
+     * Registers bot commands menu dynamically in Telegram
+     */
+    suspend fun setTelegramCommands(token: String): Boolean = withContext(Dispatchers.IO) {
+        val url = "https://api.telegram.org/bot${token}/setMyCommands"
+        val jsonPayload = """
+            {
+              "commands": [
+                {"command": "start", "description": "Mulai bot & info cara pakai"},
+                {"command": "register", "description": "Daftarkan bot Telegram baru"},
+                {"command": "tts", "description": "Teks menjadi suara (TTS)"},
+                {"command": "imagen", "description": "Buat gambar dengan AI"},
+                {"command": "veo3", "description": "Buat video animasi dari foto"},
+                {"command": "spamngl", "description": "Spam pesan ke link NGL"},
+                {"command": "hdvideo", "description": "Ubah resolusi video ke HD"},
+                {"command": "cektagihanpln", "description": "Periksa tagihan listrik PLN"},
+                {"command": "ccn", "description": "Berita terkini dari CNN Indonesia"}
+              ]
+            }
+        """.trimIndent()
+        
+        val body = jsonPayload.toRequestBody("application/json; charset=utf-8".toMediaTypeOrNull())
+        val request = Request.Builder()
+            .url(url)
+            .post(body)
+            .build()
+            
+        try {
+            OkHttpClient().newCall(request).execute().use { response ->
+                response.isSuccessful
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("BotRepository", "Failed to setTelegramCommands: ${e.message}")
+            false
         }
     }
 }
