@@ -34,12 +34,54 @@ data class TelegramUpdate(
 )
 
 @JsonClass(generateAdapter = true)
+data class TelegramVideo(
+    @Json(name = "file_id") val fileId: String,
+    @Json(name = "file_unique_id") val fileUniqueId: String,
+    @Json(name = "file_size") val fileSize: Long? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class TelegramDocument(
+    @Json(name = "file_id") val fileId: String,
+    @Json(name = "file_unique_id") val fileUniqueId: String,
+    @Json(name = "file_size") val fileSize: Long? = null
+)
+
+@JsonClass(generateAdapter = true)
 data class TelegramMessage(
     @Json(name = "message_id") val messageId: Long,
     val from: TelegramUser? = null,
     val chat: TelegramChat,
     val date: Long,
-    val text: String? = null
+    val text: String? = null,
+    val caption: String? = null,
+    @Json(name = "reply_to_message") val replyToMessage: TelegramMessage? = null,
+    val photo: List<TelegramPhotoSize>? = null,
+    val video: TelegramVideo? = null,
+    val document: TelegramDocument? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class TelegramPhotoSize(
+    @Json(name = "file_id") val fileId: String,
+    @Json(name = "file_unique_id") val fileUniqueId: String,
+    val width: Int,
+    val height: Int,
+    @Json(name = "file_size") val fileSize: Long? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class TelegramFileResponse(
+    val ok: Boolean,
+    val result: TelegramFile? = null,
+    val description: String? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class TelegramFile(
+    @Json(name = "file_id") val fileId: String,
+    @Json(name = "file_size") val fileSize: Long? = null,
+    @Json(name = "file_path") val filePath: String? = null
 )
 
 @JsonClass(generateAdapter = true)

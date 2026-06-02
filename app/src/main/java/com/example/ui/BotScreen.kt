@@ -294,8 +294,6 @@ fun DashboardTab(
     val isAdminLoggedIn by viewModel.isAdminLoggedIn.collectAsStateWithLifecycle()
     val isUserLoggedIn by viewModel.isUserLoggedIn.collectAsStateWithLifecycle()
     val loginError by viewModel.loginError.collectAsStateWithLifecycle()
-    val tokopayInvoice by viewModel.tokopayInvoiceState.collectAsStateWithLifecycle()
-    val isTokopayLoading by viewModel.isTokopayLoading.collectAsStateWithLifecycle()
     val settings by viewModel.settingsState.collectAsStateWithLifecycle()
 
     val context = LocalContext.current
@@ -545,16 +543,7 @@ fun DashboardTab(
 
         // Local states for Tokopay CONFIG
         var tokopayMerchant by remember(settings.tokopayMerchantId) { mutableStateOf(settings.tokopayMerchantId) }
-        var tokopayApiKeyInput by remember(settings.tokopayApiKey) { mutableStateOf(settings.tokopayApiKey) }
-        var tokopaySecret by remember(settings.tokopaySecretKey) { mutableStateOf(settings.tokopaySecretKey) }
         var tokopayActive by remember(settings.tokopayIsActive) { mutableStateOf(settings.tokopayIsActive) }
-        var tokopayApiKeyObscured by remember { mutableStateOf(true) }
-        var tokopaySecretObscured by remember { mutableStateOf(true) }
-
-        // Local states for Invoice TESTER
-        var simAmount by remember { mutableStateOf("15000") }
-        var selectedMethod by remember { mutableStateOf("QRIS") }
-        val paymentMethods = listOf("QRIS", "Virtual Account Mandiri", "Virtual Account BCA")
 
         LazyColumn(
             modifier = Modifier
@@ -1038,78 +1027,6 @@ fun DashboardTab(
                             )
                         )
 
-                        // API Key Input (New Field)
-                        OutlinedTextField(
-                            value = tokopayApiKeyInput,
-                            onValueChange = { tokopayApiKeyInput = it },
-                            label = { Text("API Key Tokopay") },
-                            placeholder = { Text("Masukkan API Key Tokopay Anda") },
-                            leadingIcon = {
-                                Icon(
-                                    imageVector = Icons.Default.Lock,
-                                    contentDescription = "API Key Icon",
-                                    tint = CyberTextSecondary
-                                )
-                            },
-                            trailingIcon = {
-                                IconButton(onClick = { tokopayApiKeyObscured = !tokopayApiKeyObscured }) {
-                                    Icon(
-                                        imageVector = if (tokopayApiKeyObscured) Icons.Default.Lock else Icons.Default.Refresh,
-                                        contentDescription = "Toggle API Key view"
-                                    )
-                                }
-                            },
-                            visualTransformation = if (tokopayApiKeyObscured) PasswordVisualTransformation() else VisualTransformation.None,
-                            singleLine = true,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .testTag("tokopay_api_key_input"),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = CyberSecondary,
-                                unfocusedBorderColor = CyberCardBorder,
-                                focusedLabelColor = CyberSecondary,
-                                unfocusedLabelColor = CyberTextSecondary,
-                                focusedTextColor = CyberTextPrimary,
-                                unfocusedTextColor = CyberTextPrimary
-                            )
-                        )
-
-                        // Secret Key Input
-                        OutlinedTextField(
-                            value = tokopaySecret,
-                            onValueChange = { tokopaySecret = it },
-                            label = { Text("Secret Key Tokopay") },
-                            placeholder = { Text("Masukkan Secret Key rahasia Tokopay") },
-                            leadingIcon = {
-                                Icon(
-                                    imageVector = Icons.Default.Lock,
-                                    contentDescription = "Secret Key Icon",
-                                    tint = CyberTextSecondary
-                                )
-                            },
-                            trailingIcon = {
-                                IconButton(onClick = { tokopaySecretObscured = !tokopaySecretObscured }) {
-                                    Icon(
-                                        imageVector = if (tokopaySecretObscured) Icons.Default.Lock else Icons.Default.Refresh,
-                                        contentDescription = "Toggle secret view"
-                                    )
-                                }
-                            },
-                            visualTransformation = if (tokopaySecretObscured) PasswordVisualTransformation() else VisualTransformation.None,
-                            singleLine = true,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .testTag("tokopay_secret_key_input"),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = CyberSecondary,
-                                unfocusedBorderColor = CyberCardBorder,
-                                focusedLabelColor = CyberSecondary,
-                                unfocusedLabelColor = CyberTextSecondary,
-                                focusedTextColor = CyberTextPrimary,
-                                unfocusedTextColor = CyberTextPrimary
-                            )
-                        )
-
                         // Active State Switch Row
                         Row(
                             modifier = Modifier
@@ -1150,8 +1067,8 @@ fun DashboardTab(
                             onClick = {
                                 viewModel.saveTokopaySettings(
                                     tokopayMerchant, 
-                                    tokopayApiKeyInput, 
-                                    tokopaySecret, 
+                                    "", 
+                                    "", 
                                     tokopayActive
                                 )
                                 Toast.makeText(context, "Setelan Tokopay tersimpan!", Toast.LENGTH_SHORT).show()
@@ -1170,7 +1087,7 @@ fun DashboardTab(
                     }
                 }
             }
-            } else {
+        } else {
                 // Show Mode User lock message
                 item {
                     Card(
@@ -1196,275 +1113,12 @@ fun DashboardTab(
                                 color = CyberPrimary
                             )
                             Text(
-                                "Pengaturan kredensial Bot Telegram, API Key Groq, dan konfigurasi API/Secret merchant Tokopay dilindungi dan hanya dapat diubah oleh Administrator.",
+                                "Pengaturan kredensial Bot Telegram, API Key Groq, dan konfigurasi merchant Tokopay dilindungi dan hanya dapat diubah oleh Administrator.",
                                 fontSize = 12.sp,
                                 color = CyberTextSecondary,
                                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                                 modifier = Modifier.padding(horizontal = 16.dp)
                             )
-                        }
-                    }
-                }
-            }
-
-            // TOKOPAY INSTANT INVOICE GENERATOR & WEBHOOK TESTER CARD
-            item {
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = CyberSurface),
-                    border = BorderStroke(1.dp, CyberCardBorder),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(
-                        modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(14.dp)
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Refresh,
-                                contentDescription = "Uji Icon",
-                                tint = CyberPrimary,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Text(
-                                "Uji Generator Invoice Tokopay",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 15.sp,
-                                color = CyberPrimary
-                            )
-                        }
-
-                        Text(
-                            "Uji flow order transaksi Tokopay. Administrator dapat meluncurkan invoice uji coba secara realtime dan memverifikasi integrasi callback webhook langsung dalam console.",
-                            fontSize = 11.sp,
-                            color = CyberTextSecondary
-                        )
-
-                        // Amount field
-                        OutlinedTextField(
-                            value = simAmount,
-                            onValueChange = { simAmount = it.filter { char -> char.isDigit() } },
-                            label = { Text("Jumlah Pembayaran (IDR / Rupiah)") },
-                            placeholder = { Text("15000") },
-                            leadingIcon = {
-                                Text("Rp", style = androidx.compose.ui.text.TextStyle(fontWeight = FontWeight.Bold, color = CyberSecondary), modifier = Modifier.padding(start = 12.dp, end = 4.dp))
-                            },
-                            singleLine = true,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .testTag("tokopay_test_amount_input"),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = CyberPrimary,
-                                unfocusedBorderColor = CyberCardBorder,
-                                focusedTextColor = CyberTextPrimary,
-                                unfocusedTextColor = CyberTextPrimary
-                            )
-                        )
-
-                        // Payment Methods chips selection
-                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text("Pilih Metode Bayar Tokopay:", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = CyberTextPrimary)
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                paymentMethods.forEach { method ->
-                                    val isSel = (method.startsWith("QRIS") && selectedMethod == "QRIS") || 
-                                                (method.contains("Mandiri") && selectedMethod == "MANDIRI") ||
-                                                (method.contains("BCA") && selectedMethod == "BCA")
-                                    
-                                    val code = when {
-                                        method.startsWith("QRIS") -> "QRIS"
-                                        method.contains("Mandiri") -> "MANDIRI"
-                                        else -> "BCA"
-                                    }
-
-                                    Box(
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .clip(RoundedCornerShape(8.dp))
-                                            .background(if (isSel) CyberPrimary else CyberSurfaceVariant)
-                                            .border(1.dp, if (isSel) CyberPrimary else CyberCardBorder, RoundedCornerShape(8.dp))
-                                            .clickable { selectedMethod = code }
-                                            .padding(vertical = 10.dp),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Text(
-                                            text = if (code == "QRIS") "QRIS" else if (code == "MANDIRI") "VA Mandiri" else "VA BCA",
-                                            color = if (isSel) Color.White else CyberTextPrimary,
-                                            fontWeight = FontWeight.Medium,
-                                            fontSize = 11.sp
-                                        )
-                                    }
-                                }
-                            }
-                        }
-
-                        // Generate Button
-                        Button(
-                            onClick = {
-                                val amtNum = simAmount.toIntOrNull() ?: 15000
-                                viewModel.createTokopayInvoice(amtNum, selectedMethod)
-                            },
-                            enabled = !isTokopayLoading && simAmount.isNotBlank(),
-                            shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(48.dp)
-                                .testTag("tokopay_generate_invoice_button"),
-                            colors = ButtonDefaults.buttonColors(containerColor = CyberPrimary, contentColor = Color.White)
-                        ) {
-                            if (isTokopayLoading) {
-                                CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color.White, strokeWidth = 2.dp)
-                            } else {
-                                Icon(Icons.Default.Refresh, contentDescription = "Generate", modifier = Modifier.size(18.dp))
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("TERBITKAN INVOICE TOKOPAY", fontWeight = FontWeight.Bold, fontSize = 11.sp)
-                            }
-                        }
-
-                        // Display active invoice details
-                        if (tokopayInvoice != null) {
-                            HorizontalDivider(color = CyberCardBorder, modifier = Modifier.padding(vertical = 8.dp))
-
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .background(CyberSurfaceVariant, RoundedCornerShape(10.dp))
-                                    .border(1.dp, CyberPrimary.copy(alpha = 0.5f), RoundedCornerShape(10.dp))
-                                    .padding(16.dp)
-                            ) {
-                                Column(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                                    horizontalAlignment = Alignment.CenterHorizontally
-                                ) {
-                                    // Status Badge Row
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Text(
-                                            text = tokopayInvoice!!.refId,
-                                            fontFamily = FontFamily.Monospace,
-                                            fontWeight = FontWeight.Bold,
-                                            color = CyberTextPrimary,
-                                            fontSize = 14.sp
-                                        )
-
-                                        Box(
-                                            modifier = Modifier
-                                                .clip(RoundedCornerShape(20.dp))
-                                                .background(
-                                                    if (tokopayInvoice!!.status == "PAID") CyberPrimary.copy(alpha = 0.15f)
-                                                    else Color(0xFFFF9800).copy(alpha = 0.15f)
-                                                )
-                                                .border(
-                                                    1.dp,
-                                                    if (tokopayInvoice!!.status == "PAID") CyberPrimary else Color(0xFFFF9800),
-                                                    RoundedCornerShape(20.dp)
-                                                )
-                                                .padding(horizontal = 12.dp, vertical = 4.dp)
-                                        ) {
-                                            Text(
-                                                text = if (tokopayInvoice!!.status == "PAID") "LUNAS (PAID)" else "PENDING",
-                                                color = if (tokopayInvoice!!.status == "PAID") CyberPrimary else Color(0xFFFF9800),
-                                                fontSize = 11.sp,
-                                                fontWeight = FontWeight.Bold
-                                            )
-                                        }
-                                    }
-
-                                    // Invoice Amount Display
-                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                        Text("TOTAL TAGIHAN", fontSize = 10.sp, color = CyberTextSecondary)
-                                        Text(
-                                            "Rp ${tokopayInvoice!!.amount}",
-                                            fontSize = 24.sp,
-                                            fontWeight = FontWeight.ExtraBold,
-                                            color = CyberTextPrimary
-                                        )
-                                        Text("Metode: ${tokopayInvoice!!.paymentMethod}", fontSize = 11.sp, color = CyberTextSecondary)
-                                    }
-
-                                    // Render visual depending on QRIS vs Virtual Account
-                                    if (tokopayInvoice!!.paymentMethod == "QRIS") {
-                                        QrisQrCodeVisual(amount = tokopayInvoice!!.amount)
-                                        Text("Pindai QRIS menggunakan aplikasi banking / e-wallet Anda.", fontSize = 10.sp, color = CyberTextSecondary, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-                                    } else {
-                                        // Transfer virtual account visual instruction card
-                                        Box(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .background(CyberSurface, RoundedCornerShape(8.dp))
-                                                .border(0.5.dp, CyberCardBorder, RoundedCornerShape(8.dp))
-                                                .padding(12.dp)
-                                        ) {
-                                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                                Text(
-                                                    "INTRUKSI TRANSFER VIRTUAL ACCOUNT",
-                                                    fontWeight = FontWeight.Bold,
-                                                    color = CyberSecondary,
-                                                    fontSize = 11.sp
-                                                )
-                                                Row(
-                                                    modifier = Modifier.fillMaxWidth(),
-                                                    horizontalArrangement = Arrangement.SpaceBetween
-                                                ) {
-                                                    Text("Nomor VA:", fontSize = 11.sp, color = CyberTextSecondary)
-                                                    Text(
-                                                        "8879" + System.currentTimeMillis().toString().takeLast(8),
-                                                        fontFamily = FontFamily.Monospace,
-                                                        fontWeight = FontWeight.Bold,
-                                                        color = CyberTextPrimary,
-                                                        fontSize = 12.sp
-                                                    )
-                                                }
-                                                Text("Lakukan pembayaran lewat ATM, M-Banking, atau internet banking sesuai tagihan di atas.", fontSize = 10.sp, color = CyberTextSecondary)
-                                            }
-                                        }
-                                    }
-
-                                    // Webhook test pay button
-                                    if (tokopayInvoice!!.status == "PENDING") {
-                                        Button(
-                                            onClick = { viewModel.triggerPaymentSuccessCallback() },
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .testTag("tokopay_test_pay_button"),
-                                            colors = ButtonDefaults.buttonColors(containerColor = CyberSecondary),
-                                            shape = RoundedCornerShape(8.dp)
-                                        ) {
-                                            Row(
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                            ) {
-                                                Icon(Icons.Default.CheckCircle, contentDescription = "Test payment webhook check", modifier = Modifier.size(18.dp))
-                                                Text("BAYAR INSTAN (UJI WEBHOOK)", fontWeight = FontWeight.Bold, fontSize = 11.sp)
-                                            }
-                                        }
-                                    } else {
-                                        Box(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .background(CyberPrimary.copy(alpha = 0.08f), RoundedCornerShape(8.dp))
-                                                .padding(12.dp),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Text(
-                                                "Selesai! callback webhook tokopay sukses diverifikasi murni.",
-                                                color = CyberPrimary,
-                                                fontSize = 11.sp,
-                                                fontWeight = FontWeight.Medium,
-                                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                                            )
-                                        }
-                                    }
-                                }
-                            }
                         }
                     }
                 }

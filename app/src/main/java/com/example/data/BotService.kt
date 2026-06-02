@@ -12,6 +12,7 @@ import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.*
+import java.io.File
 
 class BotService : Service() {
 
@@ -210,11 +211,11 @@ class BotService : Service() {
                 for (update in updates) {
                     lastUpdateId = update.updateId + 1
                     val message = update.message
-                    val text = message?.text
+                    val text = message?.text ?: message?.caption
                     val chat = message?.chat
                     val from = message?.from
 
-                    if (text != null && chat != null) {
+                    if (text != null && chat != null && message != null) {
                         val senderName = from?.firstName ?: "User"
                         val chatUsernameString = from?.username?.let { "@$it" } ?: "ID: ${chat.id}"
                         repository.addLog("INCOMING", "[$chatUsernameString -> @${bot.name}]: \"$text\"")
@@ -224,7 +225,7 @@ class BotService : Service() {
                                 handleIncomingMessage(
                                     token = bot.token,
                                     chatId = chat.id,
-                                    messageId = message.messageId,
+                                    incomingMessage = message,
                                     textMessage = text,
                                     senderName = senderName,
                                     systemInstruction = bot.systemInstruction,
@@ -252,7 +253,7 @@ class BotService : Service() {
     private suspend fun handleIncomingMessage(
         token: String,
         chatId: Long,
-        messageId: Long,
+        incomingMessage: TelegramMessage,
         textMessage: String,
         senderName: String,
         systemInstruction: String,
@@ -260,6 +261,360 @@ class BotService : Service() {
         model: String,
         botName: String
     ) {
+        val trimmedText = textMessage.trim()
+        val messageId = incomingMessage.messageId
+        
+        if (trimmedText.startsWith("/tts")) {
+            val targetText = trimmedText.removePrefix("/tts").trim()
+            if (targetText.isEmpty()) {
+                repository.sendTelegramMessage(
+                    token = token,
+                    chatId = chatId,
+                    text = "Gunakan perintah ini untuk mengubah teks menjadi suara (Text-to-Speech).\n\n*Format:* `/tts <teks yang ingin diucapkan>`",
+                    replyToMessageId = messageId
+                )
+                return
+            }
+            try {
+                repository.addLog("INFO", "Bot [$botName]: Memproses TTS untuk teks: \"$targetText\"...")
+                val voiceBytes = repository.generateGroqSpeech(apiKey, targetText)
+                
+                val tempFile = File.createTempFile("tts_", ".mp3", applicationContext.cacheDir)
+                tempFile.writeBytes(voiceBytes)
+                
+                repository.sendTelegramVoice(token, chatId, tempFile, replyToMessageId = messageId)
+                tempFile.delete()
+                repository.addLog("SUCCESS", "Bot [$botName]: Sukses mengirim TTS voice note ke @$senderName")
+            } catch (e: Exception) {
+                val errMsg = e.localizedMessage ?: e.message ?: "Error"
+                repository.addLog("ERROR", "Bot [$botName] gagal memproses TTS: $errMsg")
+                try {
+                    repository.sendTelegramMessage(token, chatId, "Gagal mengolah teks ke suara: $errMsg", replyToMessageId = messageId)
+                } catch (ignored: Exception) {}
+            }
+            return
+        }
+        
+        if (trimmedText.startsWith("/imagen")) {
+            var targetPrompt = trimmedText.removePrefix("/imagen").trim()
+            if (targetPrompt.isEmpty()) {
+                repository.sendTelegramMessage(
+                    token = token,
+                    chatId = chatId,
+                    text = "Gunakan perintah ini untuk membuat gambar AI via Nexray.\n\n*Format:* `/imagen <deskripsi_gambar> [--ratio <lebar:tinggi>]`",
+                    replyToMessageId = messageId
+                )
+                return
+            }
+            try {
+                // Parse ratio
+                var ratio = "1:1"
+                val ratioRegex = """--ratio\s+(\S+)""".toRegex(RegexOption.IGNORE_CASE)
+                val match = ratioRegex.find(targetPrompt)
+                if (match != null) {
+                    ratio = match.groupValues[1]
+                    targetPrompt = targetPrompt.replace(match.value, "").trim()
+                }
+                
+                repository.addLog("INFO", "Bot [$botName]: Membuat gambar AI untuk prompt: \"$targetPrompt\" (ratio: $ratio)...")
+                val imageBytes = repository.generateImageNexray(targetPrompt, ratio)
+                
+                val tempFile = File.createTempFile("img_", ".png", applicationContext.cacheDir)
+                tempFile.writeBytes(imageBytes)
+                
+                repository.sendTelegramPhoto(
+                    token = token,
+                    chatId = chatId,
+                    file = tempFile,
+                    caption = "Prompt: \"$targetPrompt\"\nRatio: $ratio",
+                    replyToMessageId = messageId
+                )
+                tempFile.delete()
+                repository.addLog("SUCCESS", "Bot [$botName]: Sukses mengirim gambar AI ke @$senderName")
+            } catch (e: Exception) {
+                val errMsg = e.localizedMessage ?: e.message ?: "Error"
+                repository.addLog("ERROR", "Bot [$botName] gagal memproses Gambar Nexray: $errMsg")
+                try {
+                    repository.sendTelegramMessage(token, chatId, "Gagal membuat gambar: $errMsg", replyToMessageId = messageId)
+                } catch (ignored: Exception) {}
+            }
+            return
+        }
+        
+        if (trimmedText.startsWith("/veo3")) {
+            try {
+                var targetPrompt = trimmedText.removePrefix("/veo3").trim()
+                var imageUrl: String? = null
+                
+                // 1. Check if foto is attached directly to this message
+                val attachedPhoto = incomingMessage.photo?.lastOrNull()
+                if (attachedPhoto != null) {
+                    val fileResponse = repository.getTelegramFile(token, attachedPhoto.fileId)
+                    val filePath = fileResponse.result?.filePath
+                    if (filePath != null) {
+                        imageUrl = "https://api.telegram.org/file/bot$token/$filePath"
+                    }
+                }
+                
+                // 2. Check if replying to a photo
+                if (imageUrl == null) {
+                    val repliedPhoto = incomingMessage.replyToMessage?.photo?.lastOrNull()
+                    if (repliedPhoto != null) {
+                        val fileResponse = repository.getTelegramFile(token, repliedPhoto.fileId)
+                        val filePath = fileResponse.result?.filePath
+                        if (filePath != null) {
+                            imageUrl = "https://api.telegram.org/file/bot$token/$filePath"
+                        }
+                    }
+                }
+                
+                // 3. Check for explicit image URL separation with |
+                val pipeIndex = targetPrompt.indexOf("|")
+                if (pipeIndex != -1) {
+                    val parsedUrl = targetPrompt.substring(pipeIndex + 1).trim()
+                    targetPrompt = targetPrompt.substring(0, pipeIndex).trim()
+                    if (parsedUrl.startsWith("http")) {
+                        imageUrl = parsedUrl
+                    }
+                }
+                
+                if (imageUrl == null) {
+                    repository.sendTelegramMessage(
+                        token = token,
+                        chatId = chatId,
+                        text = "Gunakan perintah ini untuk membuat video/animasi AI (Veo3) dari sebuah foto.\n\n*Format Penggunaan:*\n1. Upload foto dengan caption: `/veo3 [instruksi]`\n2. Balas foto di chat dengan pesan: `/veo3 [instruksi]`\n3. Ketik link langsung: `/veo3 [instruksi] | <link_foto_direct_http>`",
+                        replyToMessageId = messageId
+                    )
+                    return
+                }
+                
+                if (targetPrompt.isEmpty()) {
+                    targetPrompt = "An elegant look around camera movement"
+                }
+                
+                repository.addLog("INFO", "Bot [$botName]: Memproses veo3 video dengan prompt: \"$targetPrompt\"...")
+                val videoBytes = repository.generateVeo3Nexray(targetPrompt, imageUrl)
+                
+                val tempFile = File.createTempFile("veo3_", ".mp4", applicationContext.cacheDir)
+                tempFile.writeBytes(videoBytes)
+                
+                repository.sendTelegramVideo(
+                    token = token,
+                    chatId = chatId,
+                    file = tempFile,
+                    caption = "Veo3 Prompt: \"$targetPrompt\"",
+                    replyToMessageId = messageId
+                )
+                tempFile.delete()
+                repository.addLog("SUCCESS", "Bot [$botName]: Sukses mengirim veo3 video ke @$senderName")
+            } catch (e: Exception) {
+                val errMsg = e.localizedMessage ?: e.message ?: "Error"
+                repository.addLog("ERROR", "Bot [$botName] gagal memproses veo3 video: $errMsg")
+                try {
+                    repository.sendTelegramMessage(token, chatId, "Gagal membuat video veo3: $errMsg", replyToMessageId = messageId)
+                } catch (ignored: Exception) {}
+            }
+            return
+        }
+
+        if (trimmedText.startsWith("/spamngl")) {
+            val paramsText = trimmedText.removePrefix("/spamngl").trim()
+            if (paramsText.isEmpty()) {
+                repository.sendTelegramMessage(
+                    token = token,
+                    chatId = chatId,
+                    text = "Gunakan perintah ini untuk mengirim spam pesan ke NGL Link.\n\n*Format:* `/spamngl <url_ngl> | <pesan> | <jumlah>`\n\n*Atau tanpa pipa:* `/spamngl <url_ngl> <pesan> <jumlah>`\n\n*Contoh:* `/spamngl https://ngl.link/johndoe | Salken ya! | 5`",
+                    replyToMessageId = messageId
+                )
+                return
+            }
+            
+            val parts = if (paramsText.contains("|")) {
+                paramsText.split("|").map { it.trim() }
+            } else {
+                val tokens = paramsText.split("\\s+".toRegex()).map { it.trim() }
+                if (tokens.size >= 3) {
+                    val url = tokens.first()
+                    val count = tokens.last()
+                    val msg = tokens.subList(1, tokens.size - 1).joinToString(" ")
+                    listOf(url, msg, count)
+                } else {
+                    emptyList()
+                }
+            }
+            
+            if (parts.size < 3) {
+                repository.sendTelegramMessage(
+                    token = token,
+                    chatId = chatId,
+                    text = "Format parameter salah atau kurang lengkap.\n\n*Format:* `/spamngl <url_ngl> | <pesan> | <jumlah>`\n\n*Contoh:* `/spamngl https://ngl.link/johndoe | Salken ya! | 5`",
+                    replyToMessageId = messageId
+                )
+                return
+            }
+            
+            val nglUrl = parts[0]
+            val pesan = parts[1]
+            val jumlah = parts[2]
+            
+            val num = jumlah.toIntOrNull()
+            if (num == null || num <= 0 || num > 50) {
+                repository.sendTelegramMessage(
+                    token = token,
+                    chatId = chatId,
+                    text = "Jumlah spam harus berupa angka positif antara 1 - 50.",
+                    replyToMessageId = messageId
+                )
+                return
+            }
+            
+            try {
+                repository.addLog("INFO", "Bot [$botName]: Menjalankan Spam NGL ke $nglUrl sebanyak $jumlah kali...")
+                val apiResponse = repository.spamNgl(nglUrl, pesan, jumlah)
+                val cleanResponse = repository.formatJsonToIndonesian(apiResponse)
+                
+                repository.sendTelegramMessage(
+                    token = token,
+                    chatId = chatId,
+                    text = "✅ *Spam NGL Berhasil Dikirim!*\n\n*Target:* $nglUrl\n*Pesan:* \"$pesan\"\n*Jumlah:* $jumlah\n\n*Respon API:*\n$cleanResponse",
+                    replyToMessageId = messageId
+                )
+                repository.addLog("SUCCESS", "Bot [$botName]: Sukses spam NGL ke $nglUrl")
+            } catch (e: Exception) {
+                val errMsg = e.localizedMessage ?: e.message ?: "Error"
+                repository.addLog("ERROR", "Bot [$botName] gagal memproses Spam NGL: $errMsg")
+                try {
+                    repository.sendTelegramMessage(token, chatId, "Gagal menjalankan Spam NGL: $errMsg", replyToMessageId = messageId)
+                } catch (ignored: Exception) {}
+            }
+            return
+        }
+        
+        if (trimmedText.startsWith("/hdvideo")) {
+            try {
+                var targetUrl: String? = null
+                val userParam = trimmedText.removePrefix("/hdvideo").trim()
+                
+                // A. Check for direct video in current message
+                val attachedVideo = incomingMessage.video
+                if (attachedVideo != null) {
+                    val fileResponse = repository.getTelegramFile(token, attachedVideo.fileId)
+                    val filePath = fileResponse.result?.filePath
+                    if (filePath != null) {
+                        targetUrl = "https://api.telegram.org/file/bot$token/$filePath"
+                    }
+                }
+                
+                // B. Check for document in current message
+                if (targetUrl == null) {
+                    val attachedDoc = incomingMessage.document
+                    if (attachedDoc != null) {
+                        val fileResponse = repository.getTelegramFile(token, attachedDoc.fileId)
+                        val filePath = fileResponse.result?.filePath
+                        if (filePath != null) {
+                            targetUrl = "https://api.telegram.org/file/bot$token/$filePath"
+                        }
+                    }
+                }
+                
+                // C. Check for replied message's video
+                if (targetUrl == null) {
+                    val repliedVideo = incomingMessage.replyToMessage?.video
+                    if (repliedVideo != null) {
+                        val fileResponse = repository.getTelegramFile(token, repliedVideo.fileId)
+                        val filePath = fileResponse.result?.filePath
+                        if (filePath != null) {
+                            targetUrl = "https://api.telegram.org/file/bot$token/$filePath"
+                        }
+                    }
+                }
+                
+                // D. Check for replied message's document
+                if (targetUrl == null) {
+                    val repliedDoc = incomingMessage.replyToMessage?.document
+                    if (repliedDoc != null) {
+                        val fileResponse = repository.getTelegramFile(token, repliedDoc.fileId)
+                        val filePath = fileResponse.result?.filePath
+                        if (filePath != null) {
+                            targetUrl = "https://api.telegram.org/file/bot$token/$filePath"
+                        }
+                    }
+                }
+                
+                // E. Check for URL string in parameter
+                if (targetUrl == null && userParam.startsWith("http")) {
+                    targetUrl = userParam
+                }
+                
+                if (targetUrl == null) {
+                    repository.sendTelegramMessage(
+                        token = token,
+                        chatId = chatId,
+                        text = "Gunakan perintah ini untuk meningkatkan kualitas video menjadi HD.\n\n*Format Penggunaan:*\n1. Upload video / animasi dengan caption: `/hdvideo`\n2. Balas pesan video di chat dengan pesan: `/hdvideo`\n3. Kirim link langsung: `/hdvideo <link_video_http>`",
+                        replyToMessageId = messageId
+                    )
+                    return
+                }
+                
+                repository.addLog("INFO", "Bot [$botName]: Memproses HD Video untuk URL: $targetUrl...")
+                val videoBytes = repository.hdVideo(targetUrl)
+                
+                val tempFile = File.createTempFile("hdvideo_", ".mp4", applicationContext.cacheDir)
+                tempFile.writeBytes(videoBytes)
+                
+                repository.sendTelegramVideo(
+                    token = token,
+                    chatId = chatId,
+                    file = tempFile,
+                    caption = "✨ Sukses meningkatkan kualitas video ke HD!",
+                    replyToMessageId = messageId
+                )
+                tempFile.delete()
+                repository.addLog("SUCCESS", "Bot [$botName]: Sukses mengirim HD Video ke @$senderName")
+            } catch (e: Exception) {
+                val errMsg = e.localizedMessage ?: e.message ?: "Error"
+                repository.addLog("ERROR", "Bot [$botName] gagal memproses HD Video: $errMsg")
+                try {
+                    repository.sendTelegramMessage(token, chatId, "Gagal meningkatkan kualitas video: $errMsg", replyToMessageId = messageId)
+                } catch (ignored: Exception) {}
+            }
+            return
+        }
+        
+        if (trimmedText.startsWith("/cektagihanpln")) {
+            val nopel = trimmedText.removePrefix("/cektagihanpln").trim()
+            if (nopel.isEmpty()) {
+                repository.sendTelegramMessage(
+                    token = token,
+                    chatId = chatId,
+                    text = "Gunakan perintah ini untuk memeriksa tagihan PLN pascabayar.\n\n*Format:* `/cektagihanpln <id_pelanggan>`\n\n*Contoh:* `/cektagihanpln 530000000001`",
+                    replyToMessageId = messageId
+                )
+                return
+            }
+            
+            try {
+                repository.addLog("INFO", "Bot [$botName]: Memeriksa tagihan PLN untuk ID: $nopel...")
+                val apiResponse = repository.cekTagihanPln(nopel)
+                val formattedDetails = repository.formatJsonToIndonesian(apiResponse)
+                
+                repository.sendTelegramMessage(
+                    token = token,
+                    chatId = chatId,
+                    text = "🔌 *HASIL CEK TAGIHAN PLN*\n\n$formattedDetails",
+                    replyToMessageId = messageId
+                )
+                repository.addLog("SUCCESS", "Bot [$botName]: Sukses cek tagihan PLN untuk ID: $nopel")
+            } catch (e: Exception) {
+                val errMsg = e.localizedMessage ?: e.message ?: "Error"
+                repository.addLog("ERROR", "Bot [$botName] gagal cek tagihan PLN: $errMsg")
+                try {
+                    repository.sendTelegramMessage(token, chatId, "Gagal memeriksa tagihan PLN: $errMsg", replyToMessageId = messageId)
+                } catch (ignored: Exception) {}
+            }
+            return
+        }
+        
         try {
             repository.addLog("INFO", "Menghubungi Groq AI ($model) untuk bot [$botName]...")
             val enrichedPrompt = "Seorang pengguna bernama $senderName berinteraksi dengan Anda di bot Telegram. Dia berkata: \"$textMessage\". Harap balas dengan sopan sesuai instruksi sistem."

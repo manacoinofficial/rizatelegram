@@ -26,6 +26,9 @@ interface TelegramApiService {
         @Url url: String,
         @Body body: TelegramSendMessageRequest
     ): TelegramSendMessageResponse
+
+    @GET
+    suspend fun getFile(@Url url: String): TelegramFileResponse
 }
 
 interface GroqApiService {

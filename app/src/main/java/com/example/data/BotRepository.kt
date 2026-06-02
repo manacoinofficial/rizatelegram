@@ -4,6 +4,16 @@ import com.example.BuildConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
+import java.io.File
+import java.util.concurrent.TimeUnit
+import okhttp3.MultipartBody
+import okhttp3.RequestBody
+import okhttp3.MediaType
+import okhttp3.Request
+import okhttp3.OkHttpClient
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.RequestBody.Companion.asRequestBody
+import okhttp3.RequestBody.Companion.toRequestBody
 
 class BotRepository(private val botDao: BotDao) {
 
@@ -152,6 +162,326 @@ class BotRepository(private val botDao: BotDao) {
                 throw Exception("Groq API Error: HTTPS 401 (Tidak Diizinkan). API Key Groq Anda tidak valid atau telah kedaluwarsa. Silakan periksa kembali dan ganti API Key Anda di menu Pengaturan.")
             }
             throw Exception("Groq API Error: $message")
+        }
+    }
+
+    /**
+     * Retrieves file metadata from Telegram bot api.
+     */
+    suspend fun getTelegramFile(token: String, fileId: String): TelegramFileResponse = withContext(Dispatchers.IO) {
+        val url = "https://api.telegram.org/bot$token/getFile?file_id=$fileId"
+        NetworkClient.telegramService.getFile(url)
+    }
+
+    /**
+     * Uploads and sends a Voice message to Telegram chat.
+     */
+    suspend fun sendTelegramVoice(token: String, chatId: Long, file: File, replyToMessageId: Long? = null) = withContext(Dispatchers.IO) {
+        val url = "https://api.telegram.org/bot$token/sendVoice"
+        val mediaType = "audio/mpeg".toMediaTypeOrNull()
+        val requestBody = MultipartBody.Builder()
+            .setType(MultipartBody.FORM)
+            .addFormDataPart("chat_id", chatId.toString())
+            .addFormDataPart("voice", file.name, file.asRequestBody(mediaType))
+            .apply {
+                if (replyToMessageId != null) {
+                    addFormDataPart("reply_to_message_id", replyToMessageId.toString())
+                }
+            }
+            .build()
+        val request = Request.Builder().url(url).post(requestBody).build()
+        OkHttpClient().newCall(request).execute().use { response ->
+            if (!response.isSuccessful) throw Exception("Gagal mengirim voice ke Telegram: HTTP ${response.code}")
+        }
+    }
+
+    /**
+     * Uploads and sends a Photo message to Telegram chat.
+     */
+    suspend fun sendTelegramPhoto(token: String, chatId: Long, file: File, caption: String? = null, replyToMessageId: Long? = null) = withContext(Dispatchers.IO) {
+        val url = "https://api.telegram.org/bot$token/sendPhoto"
+        val mediaType = "image/png".toMediaTypeOrNull()
+        val builder = MultipartBody.Builder()
+            .setType(MultipartBody.FORM)
+            .addFormDataPart("chat_id", chatId.toString())
+            .addFormDataPart("photo", file.name, file.asRequestBody(mediaType))
+        if (caption != null) {
+            builder.addFormDataPart("caption", caption)
+        }
+        if (replyToMessageId != null) {
+            builder.addFormDataPart("reply_to_message_id", replyToMessageId.toString())
+        }
+        val request = Request.Builder().url(url).post(builder.build()).build()
+        OkHttpClient().newCall(request).execute().use { response ->
+            if (!response.isSuccessful) throw Exception("Gagal mengirim foto ke Telegram: HTTP ${response.code}")
+        }
+    }
+
+    /**
+     * Uploads and sends a Video/Animation message to Telegram chat.
+     */
+    suspend fun sendTelegramVideo(token: String, chatId: Long, file: File, caption: String? = null, replyToMessageId: Long? = null) = withContext(Dispatchers.IO) {
+        val url = "https://api.telegram.org/bot$token/sendVideo"
+        val mediaType = "video/mp4".toMediaTypeOrNull()
+        val builder = MultipartBody.Builder()
+            .setType(MultipartBody.FORM)
+            .addFormDataPart("chat_id", chatId.toString())
+            .addFormDataPart("video", file.name, file.asRequestBody(mediaType))
+        if (caption != null) {
+            builder.addFormDataPart("caption", caption)
+        }
+        if (replyToMessageId != null) {
+            builder.addFormDataPart("reply_to_message_id", replyToMessageId.toString())
+        }
+        val request = Request.Builder().url(url).post(builder.build()).build()
+        OkHttpClient().newCall(request).execute().use { response ->
+            if (!response.isSuccessful) throw Exception("Gagal mengirim video ke Telegram: HTTP ${response.code}")
+        }
+    }
+
+    /**
+     * Call Groq Text-to-Speech API
+     */
+    suspend fun generateGroqSpeech(apiKey: String, text: String): ByteArray = withContext(Dispatchers.IO) {
+        val url = "https://api.groq.com/openai/v1/audio/speech"
+        val jsonPayload = """
+            {
+                "model": "tts-1",
+                "input": ${com.squareup.moshi.Moshi.Builder().build().adapter(String::class.java).toJson(text)},
+                "voice": "alloy"
+            }
+        """.trimIndent()
+        
+        val mediaType = "application/json".toMediaTypeOrNull()
+        val body = jsonPayload.toRequestBody(mediaType)
+        val request = Request.Builder()
+            .url(url)
+            .header("Authorization", "Bearer $apiKey")
+            .post(body)
+            .build()
+            
+        OkHttpClient().newCall(request).execute().use { response ->
+            if (!response.isSuccessful) {
+                val errorString = response.body?.string() ?: response.message
+                throw Exception("Groq TTS failed: HTTP ${response.code} - $errorString")
+            }
+            response.body?.bytes() ?: throw Exception("Menerima respon kosong dari Groq TTS")
+        }
+    }
+
+    /**
+     * Call Nexray Image Generation
+     */
+    suspend fun generateImageNexray(prompt: String, ratio: String): ByteArray = withContext(Dispatchers.IO) {
+        val encodedPrompt = java.net.URLEncoder.encode(prompt, "UTF-8")
+        val encodedRatio = java.net.URLEncoder.encode(ratio, "UTF-8")
+        val url = "https://api.nexray.eu.cc/ai/writecreamimg?prompt=${encodedPrompt}&ratio=${encodedRatio}"
+        val request = Request.Builder()
+            .url(url)
+            .get()
+            .build()
+            
+        val client = OkHttpClient.Builder()
+            .connectTimeout(90, TimeUnit.SECONDS)
+            .readTimeout(90, TimeUnit.SECONDS)
+            .build()
+            
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) {
+                throw Exception("Gagal menghasilkan gambar: HTTP ${response.code} - ${response.message}")
+            }
+            val contentType = response.header("Content-Type") ?: ""
+            val bodyBytes = response.body?.bytes() ?: throw Exception("Menerima respon kosong dari API gambar")
+            
+            if (contentType.contains("application/json")) {
+                val jsonStr = String(bodyBytes)
+                val extractedUrl = extractUrlFromJson(jsonStr) ?: throw Exception("Tidak ada URL gambar ditemukan dalam respon: $jsonStr")
+                return@withContext downloadUrl(extractedUrl)
+            }
+            bodyBytes
+        }
+    }
+
+    /**
+     * Call Nexray Veo3 Video Generation
+     */
+    suspend fun generateVeo3Nexray(prompt: String, imageUrl: String): ByteArray = withContext(Dispatchers.IO) {
+        val encodedPrompt = java.net.URLEncoder.encode(prompt, "UTF-8")
+        val encodedImageUrl = java.net.URLEncoder.encode(imageUrl, "UTF-8")
+        val url = "https://api.nexray.eu.cc/ai/veo3?prompt=${encodedPrompt}&peompt=${encodedPrompt}&image_url=${encodedImageUrl}"
+        val request = Request.Builder()
+            .url(url)
+            .get()
+            .build()
+            
+        val client = OkHttpClient.Builder()
+            .connectTimeout(120, TimeUnit.SECONDS)
+            .readTimeout(120, TimeUnit.SECONDS)
+            .build()
+            
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) {
+                throw Exception("Gagal menghasilkan veo3 video: HTTP ${response.code} - ${response.message}")
+            }
+            val contentType = response.header("Content-Type") ?: ""
+            val bodyBytes = response.body?.bytes() ?: throw Exception("Menerima respon kosong dari API veo3")
+            
+            if (contentType.contains("application/json")) {
+                val jsonStr = String(bodyBytes)
+                val extractedUrl = extractUrlFromJson(jsonStr) ?: throw Exception("Tidak ada URL video ditemukan dalam respon: $jsonStr")
+                return@withContext downloadUrl(extractedUrl)
+            }
+            bodyBytes
+        }
+    }
+
+    private fun extractUrlFromJson(json: String): String? {
+        val pattern = """https?://[^\s"'}]+""".toRegex()
+        return pattern.find(json)?.value
+    }
+    
+    private suspend fun downloadUrl(url: String): ByteArray = withContext(Dispatchers.IO) {
+        val request = Request.Builder().url(url).build()
+        OkHttpClient().newCall(request).execute().use { response ->
+            if (!response.isSuccessful) throw Exception("Gagal mengunduh media: ${response.message}")
+            response.body?.bytes() ?: throw Exception("Unduhan media kosong")
+        }
+    }
+
+    /**
+     * Call spamngl tools API
+     */
+    suspend fun spamNgl(nglUrl: String, pesan: String, jumlah: String): String = withContext(Dispatchers.IO) {
+        val encodedUrl = java.net.URLEncoder.encode(nglUrl, "UTF-8")
+        val encodedPesan = java.net.URLEncoder.encode(pesan, "UTF-8")
+        val encodedJumlah = java.net.URLEncoder.encode(jumlah, "UTF-8")
+        val url = "https://api.nexray.eu.cc/tools/spamngl?url=${encodedUrl}&pesan=${encodedPesan}&jumlah=${encodedJumlah}"
+        val request = Request.Builder().url(url).get().build()
+        
+        val client = OkHttpClient.Builder()
+            .connectTimeout(60, TimeUnit.SECONDS)
+            .readTimeout(60, TimeUnit.SECONDS)
+            .build()
+            
+        client.newCall(request).execute().use { response ->
+            val body = response.body?.string() ?: ""
+            if (!response.isSuccessful) {
+                throw Exception("API Error ${response.code}: $body")
+            }
+            body
+        }
+    }
+
+    /**
+     * Call HD Video Converter/Optimizer API
+     */
+    suspend fun hdVideo(videoUrl: String): ByteArray = withContext(Dispatchers.IO) {
+        val encodedUrl = java.net.URLEncoder.encode(videoUrl, "UTF-8")
+        val url = "https://api.nexray.eu.cc/tools/hdvideo?url=${encodedUrl}"
+        val request = Request.Builder()
+            .url(url)
+            .get()
+            .build()
+            
+        val client = OkHttpClient.Builder()
+            .connectTimeout(120, TimeUnit.SECONDS)
+            .readTimeout(120, TimeUnit.SECONDS)
+            .build()
+            
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) {
+                throw Exception("Gagal memproses HD Video: HTTP ${response.code} - ${response.message}")
+            }
+            val contentType = response.header("Content-Type") ?: ""
+            val bodyBytes = response.body?.bytes() ?: throw Exception("Menerima respon kosong dari API HD Video")
+            
+            if (contentType.contains("application/json")) {
+                val jsonStr = String(bodyBytes)
+                val extractedUrl = extractUrlFromJson(jsonStr) ?: throw Exception("Tidak ada URL video ditemukan dalam respon: $jsonStr")
+                return@withContext downloadUrl(extractedUrl)
+            }
+            bodyBytes
+        }
+    }
+
+    /**
+     * Call PLN Tagihan Checker API
+     */
+    suspend fun cekTagihanPln(nopel: String): String = withContext(Dispatchers.IO) {
+        val encodedNopel = java.net.URLEncoder.encode(nopel, "UTF-8")
+        val url = "https://api.nexray.eu.cc/information/cektagihanpln?nopel=${encodedNopel}"
+        val request = Request.Builder().url(url).get().build()
+        
+        OkHttpClient().newCall(request).execute().use { response ->
+            val body = response.body?.string() ?: ""
+            if (!response.isSuccessful) {
+                throw Exception("API Error ${response.code}: $body")
+            }
+            body
+        }
+    }
+
+    fun formatJsonToIndonesian(jsonStr: String): String {
+        try {
+            val jsonObject = org.json.JSONObject(jsonStr)
+            val sb = java.lang.StringBuilder()
+            
+            // Check success/status/result
+            if (jsonObject.has("status")) {
+                val statusVal = jsonObject.get("status")
+                if (statusVal is Boolean && !statusVal) {
+                    val message = jsonObject.optString("message", "Error")
+                    return "❌ *Gagal Cek Tagihan PLN:*\nDetail: $message"
+                } else if (statusVal is String && (statusVal.lowercase() == "false" || statusVal.lowercase() == "failed" || statusVal.lowercase() == "error")) {
+                    val message = jsonObject.optString("message", "Error")
+                    return "❌ *Gagal Cek Tagihan PLN:*\nDetail: $message"
+                }
+            }
+            
+            val dataObj = jsonObject.optJSONObject("data") ?: jsonObject.optJSONObject("result") ?: jsonObject
+            
+            val keys = dataObj.keys()
+            while (keys.hasNext()) {
+                val key = keys.next()
+                val value = dataObj.get(key)
+                if (value is org.json.JSONObject || value is org.json.JSONArray) {
+                    continue
+                }
+                val label = when(key.lowercase()) {
+                    "nopel", "idpel", "customer_id", "nomor_pelanggan" -> "ID Pelanggan"
+                    "nama", "name", "customer_name", "nama_pelanggan" -> "Nama Pelanggan"
+                    "tarif", "rate" -> "Tarif"
+                    "daya", "power" -> "Daya"
+                    "tagihan", "total", "nominal", "amount", "total_tagihan", "tag" -> "Total Tagihan"
+                    "periode", "period", "bulan", "month" -> "Periode"
+                    "denda", "penalty" -> "Denda"
+                    "admin", "fee" -> "Biaya Admin"
+                    "status" -> "Status"
+                    "stand_meter", "meter" -> "Stand Meter"
+                    else -> key.replace("_", " ").split(" ").joinToString(" ") { it.replaceFirstChar { char -> if (char.isLowerCase()) char.titlecase(java.util.Locale.getDefault()) else char.toString() } }
+                }
+                
+                val valStr = if ((key.lowercase().contains("tagihan") || key.lowercase().contains("nominal") || key.lowercase().contains("amount") || key.lowercase() == "total" || key.lowercase() == "denda" || key.lowercase() == "admin" || key.lowercase() == "tag") && value is Number) {
+                    val formatted = java.text.NumberFormat.getCurrencyInstance(java.util.Locale("id", "ID")).format(value)
+                    formatted.replace("Rp", "Rp ").replace(",00", "")
+                } else {
+                    value.toString()
+                }
+                
+                sb.append("⚡ *").append(label).append(":* ").append(valStr).append("\n")
+            }
+            
+            if (sb.isEmpty()) {
+                return jsonStr
+            }
+            return sb.toString()
+        } catch (e: Exception) {
+            return jsonStr.replace("{", "")
+                .replace("}", "")
+                .replace("\"", "")
+                .replace("[", "")
+                .replace("]", "")
+                .replace(",", "\n")
         }
     }
 }
