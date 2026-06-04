@@ -103,7 +103,9 @@ class BotService : Service() {
         val token: String,
         val model: String,
         val systemInstruction: String,
-        val name: String
+        val name: String,
+        val aiProvider: String = "Groq",
+        val customApiKey: String = ""
     )
 
     private fun startPolling() {
@@ -126,7 +128,9 @@ class BotService : Service() {
                                 token = settings.telegramToken,
                                 model = settings.selectedModel,
                                 systemInstruction = settings.systemInstruction,
-                                name = "Main System Bot"
+                                name = "Main System Bot",
+                                aiProvider = settings.aiProvider,
+                                customApiKey = settings.customApiKey
                             )
                         )
                     }
@@ -139,7 +143,9 @@ class BotService : Service() {
                                     token = user.telegramToken,
                                     model = user.selectedModel,
                                     systemInstruction = settings.systemInstruction,
-                                    name = user.name
+                                    name = user.name,
+                                    aiProvider = user.aiProvider,
+                                    customApiKey = user.customApiKey
                                 )
                             )
                         }
@@ -236,7 +242,9 @@ class BotService : Service() {
                                     systemInstruction = bot.systemInstruction,
                                     apiKey = groqApiKey,
                                     model = bot.model,
-                                    botName = bot.name
+                                    botName = bot.name,
+                                    aiProvider = bot.aiProvider,
+                                    customApiKey = bot.customApiKey
                                 )
                             }
                         }
@@ -264,7 +272,9 @@ class BotService : Service() {
         systemInstruction: String,
         apiKey: String,
         model: String,
-        botName: String
+        botName: String,
+        aiProvider: String,
+        customApiKey: String
     ) {
         val trimmedText = textMessage.trim()
         val messageId = incomingMessage.messageId
@@ -273,12 +283,28 @@ class BotService : Service() {
             val welcomeText = """
                 👋 *Halo $senderName! Selamat datang di AI Bot Setup!*
                 
-                Saya adalah asisten AI Anda yang siap melayani 24 jam non-stop ditenagai oleh Groq AI super cepat.
+                Saya adalah asisten AI Anda yang siap melayani 24 jam non-stop ditenagai oleh kecerdasan buatan super cepat.
+                
+                ⚙️ *Konfigurasi AI Aktif di Bot Ini:*
+                - 🧠 *Mesin AI:* ${aiProvider}
+                - 🤖 *Model:* ${model}
+                - 🔑 *Kunci API Kustom:* ${if (customApiKey.isNotBlank()) "✅ Terpasang (${customApiKey.take(7)}...)" else "❌ Tidak Ada (Menggunakan sistem default)"}
+                
+                🛠️ *Perintah Konfigurasi AI:*
+                - `/pilihai <groq_atau_gemini>` - Pilih mesin kecerdasan buatan
+                - `/pilihmodel <nama_model>` - Ganti model AI yang digunakan aktif
+                - `/masukanapikey <api_key>` - Setel kunci API kustom pribadi Anda
                 
                 🤖 *Bagian Pendaftaran Bot Baru:*
                 Anda dapat mendaftarkan bot Telegram Anda sendiri untuk di-host di sistem kami dengan menggunakan perintah `/register`:
                 Format: `/register <Nama Anda> | <No WhatsApp> | <Token BotFather>`
                 Contoh: `/register Riza | 08123456789 | 12345:AAH_xyz`
+                
+                💵 *Langkah Aktivasi Bot:*
+                Setelah mendaftar, lakukan donasi *Rp 50.000* ke:
+                🔗 https://api.nexray.eu.cc/payment/qris
+                Dan gunakan perintah berikut untuk aktivasi instan agar bot langsung online:
+                👉 `/admin/acc <@username_bot_atau_id_pendaftaran>`
                 
                 *Daftar Perintah Menarik yang Tersedia:*
                 🎙️ `/tts <teks>` - Mengubah teks menjadi audio suara
@@ -288,6 +314,8 @@ class BotService : Service() {
                 ✨ `/hdvideo` - Tingkatkan kualitas video / lampiran video menjadi HD (Bisa dengan me-reply video/dokumen)
                 🔌 `/cektagihanpln <id_pelanggan>` - Memeriksa tagihan listrik PLN
                 📰 `/ccn` atau `/cnn` - Membaca berita hangat CNN Indonesia terbaru
+                💳 `/pembayaran` - Menampilkan link/QRIS pembayaran resmi
+                🎁 `/donate` - Berikan dukungan donasi ke Riza Store
                 
                 Silakan ketik atau pilih perintah yang Anda inginkan di bawah! 👇
             """.trimIndent()
@@ -298,6 +326,162 @@ class BotService : Service() {
                 text = welcomeText,
                 replyToMessageId = messageId
             )
+            return
+        }
+
+        if (trimmedText.startsWith("/pilihai")) {
+            val providerParam = trimmedText.removePrefix("/pilihai").trim().lowercase()
+            if (providerParam.isEmpty()) {
+                val currentInfo = """
+                    🧠 *Mesin AI Yang Digunakan:* *$aiProvider*
+                    
+                    Hubungi perintah ini untuk mengganti mesin AI yang melayani bot ini.
+                    
+                    *Pilihan Mesin:*
+                    - *Groq* (Kecerdasan kilat, respons secepat kilat)
+                    - *Gemini* (Pengetahuan luas dan pemahaman tingkat tinggi)
+                    
+                    *Format:* `/pilihai <groq_atau_gemini>`
+                    *Contoh:* `/pilihai gemini` atau `/pilihai groq`
+                """.trimIndent()
+                repository.sendTelegramMessage(token, chatId, currentInfo, replyToMessageId = messageId)
+                return
+            }
+            
+            val validProvider = when (providerParam) {
+                "groq" -> "Groq"
+                "gemini" -> "Gemini"
+                else -> null
+            }
+            
+            if (validProvider == null) {
+                repository.sendTelegramMessage(
+                    token = token,
+                    chatId = chatId,
+                    text = "⚠️ *Mesin AI tidak dikenali!*\n\nSilakan pilih salah satu mesin berikut:\n- `groq`\n- `gemini`",
+                    replyToMessageId = messageId
+                )
+                return
+            }
+            
+            val success = repository.updateBotProvider(token, validProvider)
+            if (success) {
+                repository.sendTelegramMessage(
+                    token = token,
+                    chatId = chatId,
+                    text = "✅ *BERHASIL DIUBAH!*\n\nBot Anda kini ditenagai oleh mesin AI: *$validProvider*.",
+                    replyToMessageId = messageId
+                )
+                repository.addLog("SUCCESS", "Bot [$botName] mengubah mesin AI ke $validProvider")
+            } else {
+                repository.sendTelegramMessage(
+                    token = token,
+                    chatId = chatId,
+                    text = "❌ *Gagal mengubah mesin AI!*",
+                    replyToMessageId = messageId
+                )
+            }
+            return
+        }
+
+        if (trimmedText.startsWith("/pilihmodel")) {
+            val modelParam = trimmedText.removePrefix("/pilihmodel").trim()
+            if (modelParam.isEmpty()) {
+                val currentInfo = """
+                    🤖 *Model AI Yang Digunakan:* *$model*
+                    
+                    Gunakan perintah ini untuk mengganti nama model AI yang aktif.
+                    
+                    *Rekomendasi Model Sesuai Mesin:*
+                    
+                    🔥 *Model Groq:*
+                    - `llama-3.1-8b-instant` (Default cepat)
+                    - `llama3-8b-8192` (Llama 8B)
+                    - `llama-3.1-70b-versatile` (Llama premium)
+                    - `gemma2-9b-it` (Google Gemma 9B)
+                    - `mixtral-8x7b-32768` (Mixtral MoE)
+                    
+                    ✨ *Model Gemini:*
+                    - `gemini-1.5-flash` (Pilihan seimbang & cepat)
+                    - `gemini-1.5-pro` (Kecerdasan reasoning tinggi)
+                    - `gemini-2.5-flash` (Generasi terbaru instant)
+                    - `gemini-2.5-pro` (Generasi terbaru advanced)
+                    
+                    *Format:* `/pilihmodel <nama_model>`
+                    *Contoh:* `/pilihmodel gemini-1.5-flash`
+                """.trimIndent()
+                repository.sendTelegramMessage(token, chatId, currentInfo, replyToMessageId = messageId)
+                return
+            }
+            
+            val success = repository.updateBotModel(token, modelParam)
+            if (success) {
+                repository.sendTelegramMessage(
+                    token = token,
+                    chatId = chatId,
+                    text = "✅ *BERHASIL DIUBAH!*\n\nBot Anda kini menggunakan model: *$modelParam*.",
+                    replyToMessageId = messageId
+                )
+                repository.addLog("SUCCESS", "Bot [$botName] mengubah model ke $modelParam")
+            } else {
+                repository.sendTelegramMessage(
+                    token = token,
+                    chatId = chatId,
+                    text = "❌ *Gagal mengubah model AI!*",
+                    replyToMessageId = messageId
+                )
+            }
+            return
+        }
+
+        if (trimmedText.startsWith("/masukanapikey")) {
+            val keyParam = trimmedText.removePrefix("/masukanapikey").trim()
+            if (keyParam.isEmpty()) {
+                val statusText = if (customApiKey.isNotBlank()) {
+                    "✅ *Terpasang:* `${customApiKey.take(7)}... ${customApiKey.takeLast(5)}`"
+                } else {
+                    "❌ *Belum Terpasang* (Menggunakan kunci default developer/sistem)"
+                }
+                
+                val instructionText = """
+                    🔑 *Pengaturan Kunci API Kustom (API Key Anda):*
+                    Status saat ini: $statusText
+                    
+                    Gunakan perintah ini jika Anda ingin menggunakan kunci API pribadi Anda sendiri untuk menghindari limitasi server global.
+                    
+                    *Format:* `/masukanapikey <kunci_api>`
+                    *Contoh:* `/masukanapikey gsk_123456789...` atau jika Gemini `/masukanapikey AIzaSy...`
+                    
+                    _Untuk mereset / menghapus kunci kustom Anda dan kembali menggunakan default sistem, ketik:_
+                    `/masukanapikey reset`
+                """.trimIndent()
+                repository.sendTelegramMessage(token, chatId, instructionText, replyToMessageId = messageId)
+                return
+            }
+            
+            val finalKey = if (keyParam.lowercase() == "reset" || keyParam.lowercase() == "delete" || keyParam.lowercase() == "hapus") "" else keyParam
+            val success = repository.updateBotApiKey(token, finalKey)
+            if (success) {
+                val confirmText = if (finalKey.isEmpty()) {
+                    "🗑️ *Kunci API kustom telah berhasil dihapus!*\n\nBot Anda telah kembali menggunakan API Key default dari server kami."
+                } else {
+                    "✅ *Kunci API kustom berhasil dipasang!*\n\nKunci API: `${finalKey.take(7)}...` sekarang aktif melayani request Anda."
+                }
+                repository.sendTelegramMessage(
+                    token = token,
+                    chatId = chatId,
+                    text = confirmText,
+                    replyToMessageId = messageId
+                )
+                repository.addLog("SUCCESS", "Bot [$botName] mengubah API Key kustom")
+            } else {
+                repository.sendTelegramMessage(
+                    token = token,
+                    chatId = chatId,
+                    text = "❌ *Gagal memasang kunci API kustom!*",
+                    replyToMessageId = messageId
+                )
+            }
             return
         }
 
@@ -351,25 +535,34 @@ class BotService : Service() {
                     telegramToken = clientToken,
                     selectedModel = defaultModel,
                     price = priceDefault,
-                    isActive = true,
+                    isActive = false, // Initially inactive
                     botUsername = botInfo.username ?: "",
                     botFirstName = botInfo.firstName
                 )
                 
-                repository.saveRegisteredUser(newUser)
+                val insertedId = repository.saveRegisteredUser(newUser)
                 
                 val successMessage = """
-                    ✅ *REGISTRASI BOT BERHASIL!* 🚀
+                    📝 *PENDAFTARAN BOT BERHASIL DIAJUKAN!* 🚀
                     
-                    Halo *$clientName*, bot Anda telah berhasil di-host dan diaktifkan di platform kami!
+                    Halo *$clientName*, data pendirian bot Anda telah kami simpan dengan aman di sistem kami!
                     
-                    *Detail Layanan Anda:*
+                    *Detail Pendaftaran:*
+                    - *ID Pendaftaran:* #$insertedId
                     - *Nama Bot:* ${botInfo.firstName}
                     - *Username Bot:* @${botInfo.username}
                     - *Model Utama:* $defaultModel
-                    - *Paket Layanan:* Aktif 24 Jam Non-Stop
+                    - *Status:* ⏳ *PENDING / BELUM AKTIF*
                     
-                    Bot Anda kini siap digunakan dan memproses perintah otomatis dari user Anda. Silakan mulai chat dengan @${botInfo.username}!
+                    💳 *Langkah Aktivasi:*
+                    Untuk mengaktifkan bot Anda agar segera online 24 jam non-stop, silakan lakukan donasi terlebih dahulu sebesar *Rp 50.000* melalui link QRIS berikut:
+                    🔗 https://api.nexray.eu.cc/payment/qris
+                    
+                    Setelah Anda melakukan pembayaran/donasi, silakan kirimkan perintah aktivasi berikut langsung di chat ini untuk mengaktifkan bot Anda secara instan:
+                    👉 `/admin/acc @${botInfo.username}`
+                    
+                    Atau jika ingin mengaktifkan dengan ID pendaftaran:
+                    👉 `/admin/acc $insertedId`
                 """.trimIndent()
                 
                 repository.sendTelegramMessage(
@@ -378,7 +571,7 @@ class BotService : Service() {
                     text = successMessage,
                     replyToMessageId = messageId
                 )
-                repository.addLog("SUCCESS", "Registrasi Berhasil via Telegram! Bot @${botInfo.username} didaftarkan oleh $clientName")
+                repository.addLog("SUCCESS", "Registrasi Pending (Menunggu Donasi) via Telegram! Bot @${botInfo.username} didaftarkan oleh $clientName")
             } catch (e: Exception) {
                 val errMsg = e.localizedMessage ?: e.message ?: "Error"
                 repository.addLog("ERROR", "Registrasi via Telegram gagal: $errMsg")
@@ -391,7 +584,133 @@ class BotService : Service() {
             }
             return
         }
+
+        if (trimmedText.startsWith("/admin/acc")) {
+            val param = trimmedText.removePrefix("/admin/acc").trim()
+            if (param.isEmpty()) {
+                repository.sendTelegramMessage(
+                    token = token,
+                    chatId = chatId,
+                    text = "⚠️ *Format Perintah Salah!*\n\nGunakan perintah ini untuk menyetujui (ACC) dan meluncurkan bot Telegram yang didaftarkan.\n\n*Format:* `/admin/acc <id_pendaftaran_atau_@username_bot>`\n\n*Contoh:* `/admin/acc @${botName}` atau `/admin/acc 1`",
+                    replyToMessageId = messageId
+                )
+                return
+            }
+            
+            try {
+                repository.addLog("INFO", "Bot [$botName]: Memproses aktivasi /admin/acc untuk parameter: $param")
+                val allUsers = repository.getAllRegisteredUsers()
+                
+                // Try to find the matching user
+                val matchedUser = allUsers.find { user ->
+                    val cleanParam = param.removePrefix("@").trim().lowercase()
+                    val cleanBotUsername = user.botUsername.lowercase()
+                    val cleanName = user.name.lowercase()
+                    
+                    user.id.toString() == param ||
+                    cleanBotUsername == cleanParam ||
+                    cleanName == cleanParam ||
+                    user.telegramToken == param
+                }
+                
+                if (matchedUser == null) {
+                    repository.sendTelegramMessage(
+                        token = token,
+                        chatId = chatId,
+                        text = "❌ *Pendaftaran Tidak Ditemukan!*\n\nTidak dapat menemukan data pendaftaran berstatus pending dengan ID, username, atau nama: *\"$param\"*.",
+                        replyToMessageId = messageId
+                    )
+                    return
+                }
+                
+                if (matchedUser.isActive) {
+                    repository.sendTelegramMessage(
+                        token = token,
+                        chatId = chatId,
+                        text = "⚠️ *Informasi:* Bot *@${matchedUser.botUsername}* (${matchedUser.name}) sudah dalam keadaan *aktif* sebelumnya!",
+                        replyToMessageId = messageId
+                    )
+                    return
+                }
+                
+                // Activate the bot
+                val activatedUser = matchedUser.copy(isActive = true)
+                repository.saveRegisteredUser(activatedUser)
+                
+                val activationSuccessMsg = """
+                    ✅ *BOT BERHASIL DIAKTIFKAN!* 🚀
+                    
+                    Selamat! Bot Telegram Anda sekarang telah *AKTIF* di sistem kami dan langsung dideploy sebagai bot Telegram mandiri secara instan!
+                    
+                    *Detail Bot Aktif:*
+                    - *Pemilik:* ${activatedUser.name}
+                    - *Nama Bot:* ${activatedUser.botFirstName}
+                    - *Username Bot:* @${activatedUser.botUsername}
+                    - *Status:* 🟢 *ONLINE / RUNNING*
+                    
+                    Silakan mulai chat dengan bot Anda di: @${activatedUser.botUsername} !
+                """.trimIndent()
+                
+                repository.sendTelegramMessage(
+                    token = token,
+                    chatId = chatId,
+                    text = activationSuccessMsg,
+                    replyToMessageId = messageId
+                )
+                
+                repository.addLog("SUCCESS", "Bot @${activatedUser.botUsername} berhasil diaktifkan melalui /admin/acc!")
+            } catch (e: Exception) {
+                val errMsg = e.localizedMessage ?: e.message ?: "Error"
+                repository.addLog("ERROR", "Gagal memproses /admin/acc: $errMsg")
+                repository.sendTelegramMessage(
+                    token = token,
+                    chatId = chatId,
+                    text = "❌ *Gagal Mengaktifkan Bot!*\n\n*Error:* $errMsg",
+                    replyToMessageId = messageId
+                )
+            }
+            return
+        }
         
+        if (trimmedText.startsWith("/pembayaran")) {
+            val paymentMsg = """
+                💳 *Layanan Pembayaran QRIS* 🚀
+                
+                Untuk melakukan pembayaran atau aktivasi bot Anda, silakan scan atau kunjungi link QRIS resmi kami di bawah ini:
+                
+                🔗 https://api.nexray.eu.cc/payment/qris
+                
+                _Setelah melakukan pembayaran, Anda dapat mengaktifkan bot Anda dengan perintah:_
+                👉 `/admin/acc <@username_bot>`
+            """.trimIndent()
+            repository.sendTelegramMessage(
+                token = token,
+                chatId = chatId,
+                text = paymentMsg,
+                replyToMessageId = messageId
+            )
+            return
+        }
+
+        if (trimmedText.startsWith("/donate")) {
+            val donateMsg = """
+                🎁 *Donasi Riza Store* 💖
+                
+                Terima kasih atas minat Anda untuk mendukung perkembangan layanan kami! Anda dapat menyalurkan donasi finansial melalui link pembayaran berikut:
+                
+                🔗 https://qris.zone.id/rizastore?payment_id=rizastore-fxi5sziq
+                
+                Dukungan Anda sangat berarti bagi kelangsungan server 24 jam non-stop!
+            """.trimIndent()
+            repository.sendTelegramMessage(
+                token = token,
+                chatId = chatId,
+                text = donateMsg,
+                replyToMessageId = messageId
+            )
+            return
+        }
+
         if (trimmedText.startsWith("/tts")) {
             val targetText = trimmedText.removePrefix("/tts").trim()
             if (targetText.isEmpty()) {
@@ -767,9 +1086,16 @@ class BotService : Service() {
         }
         
         try {
-            repository.addLog("INFO", "Menghubungi Groq AI ($model) untuk bot [$botName]...")
             val enrichedPrompt = "Seorang pengguna bernama $senderName berinteraksi dengan Anda di bot Telegram. Dia berkata: \"$textMessage\". Harap balas dengan sopan sesuai instruksi sistem."
-            val aiResponse = repository.askGroq(enrichedPrompt, apiKey, model, systemInstruction)
+            val aiResponse = if (aiProvider == "Gemini") {
+                repository.addLog("INFO", "Menghubungi Gemini AI ($model) untuk bot [$botName]...")
+                val activeApiKey = if (customApiKey.isNotBlank()) customApiKey else ""
+                repository.askGemini(enrichedPrompt, activeApiKey, model, systemInstruction)
+            } else {
+                repository.addLog("INFO", "Menghubungi Groq AI ($model) untuk bot [$botName]...")
+                val activeApiKey = if (customApiKey.isNotBlank()) customApiKey else apiKey
+                repository.askGroq(enrichedPrompt, activeApiKey, model, systemInstruction)
+            }
 
             repository.addLog("OUTGOING", "[@$botName -> @$senderName]: \"$aiResponse\"")
 

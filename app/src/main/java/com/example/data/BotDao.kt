@@ -29,6 +29,9 @@ interface BotDao {
     @Query("SELECT * FROM registered_users WHERE isActive = 1")
     suspend fun getActiveRegisteredUsers(): List<RegisteredUser>
 
+    @Query("SELECT * FROM registered_users")
+    suspend fun getAllRegisteredUsers(): List<RegisteredUser>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun saveRegisteredUser(user: RegisteredUser): Long
 

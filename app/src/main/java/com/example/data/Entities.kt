@@ -24,7 +24,10 @@ data class BotSettings(
     // WhatsApp Pairing Connection Fields
     val adminWhatsappNumber: String = "",
     val isWhatsappConnected: Boolean = false,
-    val whatsappPairingCode: String = ""
+    val whatsappPairingCode: String = "",
+
+    val aiProvider: String = "Groq",
+    val customApiKey: String = ""
 )
 
 @Entity(tableName = "registered_users")
@@ -38,7 +41,9 @@ data class RegisteredUser(
     val isActive: Boolean = true,
     val botUsername: String = "",
     val botFirstName: String = "",
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    val aiProvider: String = "Groq",
+    val customApiKey: String = ""
 )
 
 @Entity(tableName = "bot_logs")

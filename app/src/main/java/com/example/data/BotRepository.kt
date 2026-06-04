@@ -25,6 +25,10 @@ class BotRepository(private val botDao: BotDao) {
         botDao.getActiveRegisteredUsers()
     }
 
+    suspend fun getAllRegisteredUsers(): List<RegisteredUser> = withContext(Dispatchers.IO) {
+        botDao.getAllRegisteredUsers()
+    }
+
     suspend fun saveRegisteredUser(user: RegisteredUser): Long = withContext(Dispatchers.IO) {
         botDao.saveRegisteredUser(user)
     }
@@ -240,32 +244,24 @@ class BotRepository(private val botDao: BotDao) {
     }
 
     /**
-     * Call Groq Text-to-Speech API
+     * Call Text-to-Speech API (Uses robust Google Translate TTS engine since Groq does not provide tts services natively)
      */
     suspend fun generateGroqSpeech(apiKey: String, text: String): ByteArray = withContext(Dispatchers.IO) {
-        val url = "https://api.groq.com/openai/v1/audio/speech"
-        val jsonPayload = """
-            {
-                "model": "tts-1",
-                "input": ${com.squareup.moshi.Moshi.Builder().build().adapter(String::class.java).toJson(text)},
-                "voice": "alloy"
-            }
-        """.trimIndent()
+        val encodedText = java.net.URLEncoder.encode(text, "UTF-8")
+        val url = "https://translate.google.com/translate_tts?ie=UTF-8&tl=id&client=tw-ob&q=$encodedText"
         
-        val mediaType = "application/json".toMediaTypeOrNull()
-        val body = jsonPayload.toRequestBody(mediaType)
         val request = Request.Builder()
             .url(url)
-            .header("Authorization", "Bearer $apiKey")
-            .post(body)
+            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0.0.0 Safari/537.36")
+            .get()
             .build()
             
         OkHttpClient().newCall(request).execute().use { response ->
             if (!response.isSuccessful) {
                 val errorString = response.body?.string() ?: response.message
-                throw Exception("Groq TTS failed: HTTP ${response.code} - $errorString")
+                throw Exception("TTS failed: HTTP ${response.code} - $errorString")
             }
-            response.body?.bytes() ?: throw Exception("Menerima respon kosong dari Groq TTS")
+            response.body?.bytes() ?: throw Exception("Menerima respon kosong dari TTS")
         }
     }
 
@@ -587,13 +583,19 @@ class BotRepository(private val botDao: BotDao) {
               "commands": [
                 {"command": "start", "description": "Mulai bot & info cara pakai"},
                 {"command": "register", "description": "Daftarkan bot Telegram baru"},
+                {"command": "pilihai", "description": "Pilih mesin AI (Groq / Gemini)"},
+                {"command": "pilihmodel", "description": "Ganti model AI"},
+                {"command": "masukanapikey", "description": "Atur API Key Anda"},
+                {"command": "pembayaran", "description": "Link scan/pembayaran QRIS"},
+                {"command": "donate", "description": "Link donasi Riza Store"},
                 {"command": "tts", "description": "Teks menjadi suara (TTS)"},
                 {"command": "imagen", "description": "Buat gambar dengan AI"},
                 {"command": "veo3", "description": "Buat video animasi dari foto"},
                 {"command": "spamngl", "description": "Spam pesan ke link NGL"},
                 {"command": "hdvideo", "description": "Ubah resolusi video ke HD"},
                 {"command": "cektagihanpln", "description": "Periksa tagihan listrik PLN"},
-                {"command": "ccn", "description": "Berita terkini dari CNN Indonesia"}
+                {"command": "ccn", "description": "Berita terkini dari CNN Indonesia"},
+                {"command": "admin/acc", "description": "Aktivasi bot Telegram tertunda"}
               ]
             }
         """.trimIndent()
@@ -611,6 +613,123 @@ class BotRepository(private val botDao: BotDao) {
         } catch (e: Exception) {
             android.util.Log.e("BotRepository", "Failed to setTelegramCommands: ${e.message}")
             false
+        }
+    }
+
+    suspend fun updateBotProvider(token: String, provider: String): Boolean = withContext(Dispatchers.IO) {
+        val settings = botDao.getSettings()
+        if (settings != null && settings.telegramToken == token) {
+            botDao.saveSettings(settings.copy(aiProvider = provider))
+            return@withContext true
+        }
+        val users = botDao.getAllRegisteredUsers()
+        val user = users.find { it.telegramToken == token }
+        if (user != null) {
+            botDao.saveRegisteredUser(user.copy(aiProvider = provider))
+            return@withContext true
+        }
+        false
+    }
+
+    suspend fun updateBotModel(token: String, model: String): Boolean = withContext(Dispatchers.IO) {
+        val settings = botDao.getSettings()
+        if (settings != null && settings.telegramToken == token) {
+            botDao.saveSettings(settings.copy(selectedModel = model))
+            return@withContext true
+        }
+        val users = botDao.getAllRegisteredUsers()
+        val user = users.find { it.telegramToken == token }
+        if (user != null) {
+            botDao.saveRegisteredUser(user.copy(selectedModel = model))
+            return@withContext true
+        }
+        false
+    }
+
+    suspend fun updateBotApiKey(token: String, apiKey: String): Boolean = withContext(Dispatchers.IO) {
+        val settings = botDao.getSettings()
+        if (settings != null && settings.telegramToken == token) {
+            botDao.saveSettings(settings.copy(customApiKey = apiKey))
+            return@withContext true
+        }
+        val users = botDao.getAllRegisteredUsers()
+        val user = users.find { it.telegramToken == token }
+        if (user != null) {
+            botDao.saveRegisteredUser(user.copy(customApiKey = apiKey))
+            return@withContext true
+        }
+        false
+    }
+
+    /**
+     * Sends prompt to Gemini API.
+     */
+    suspend fun askGemini(
+        prompt: String,
+        apiKey: String,
+        model: String,
+        systemInstruction: String
+    ): String = withContext(Dispatchers.IO) {
+        if (apiKey.isBlank()) {
+            throw Exception("API Key Gemini belum dikonfigurasi. Harap masukkan API Key Gemini yang valid.")
+        }
+        val baseUrl = "https://generativelanguage.googleapis.com/v1beta/models"
+        val cleanModel = if (model.startsWith("gemini")) model else "gemini-1.5-flash"
+        val url = "$baseUrl/$cleanModel:generateContent?key=$apiKey"
+
+        val jsonPayload = org.json.JSONObject()
+        
+        // Contents
+        val contentsArray = org.json.JSONArray()
+        val contentObj = org.json.JSONObject()
+        contentObj.put("role", "user")
+        val partsArray = org.json.JSONArray()
+        val partObj = org.json.JSONObject()
+        partObj.put("text", prompt)
+        partsArray.put(partObj)
+        contentObj.put("parts", partsArray)
+        contentsArray.put(contentObj)
+        jsonPayload.put("contents", contentsArray)
+
+        // System Instruction
+        if (systemInstruction.isNotBlank()) {
+            val systemInstructionObj = org.json.JSONObject()
+            val systemPartsArray = org.json.JSONArray()
+            val systemPartObj = org.json.JSONObject()
+            systemPartObj.put("text", systemInstruction)
+            systemPartsArray.put(systemPartObj)
+            systemInstructionObj.put("parts", systemPartsArray)
+            jsonPayload.put("systemInstruction", systemInstructionObj)
+        }
+
+        val requestBody = jsonPayload.toString().toRequestBody("application/json; charset=utf-8".toMediaTypeOrNull())
+        val request = Request.Builder()
+            .url(url)
+            .post(requestBody)
+            .build()
+
+        val client = OkHttpClient.Builder()
+            .connectTimeout(60, TimeUnit.SECONDS)
+            .readTimeout(60, TimeUnit.SECONDS)
+            .build()
+
+        client.newCall(request).execute().use { response ->
+            val responseBody = response.body?.string() ?: ""
+            if (!response.isSuccessful) {
+                throw Exception("API Error: HTTP ${response.code} \nDetail: $responseBody")
+            }
+            
+            val responseObj = org.json.JSONObject(responseBody)
+            val candidatesArray = responseObj.optJSONArray("candidates")
+            if (candidatesArray != null && candidatesArray.length() > 0) {
+                val candidate = candidatesArray.getJSONObject(0)
+                val content = candidate.optJSONObject("content")
+                val parts = content?.optJSONArray("parts")
+                if (parts != null && parts.length() > 0) {
+                    return@withContext parts.getJSONObject(0).optString("text") ?: ""
+                }
+            }
+            throw Exception("Menerima respon kosong atau tidak valid dari Gemini API.")
         }
     }
 }

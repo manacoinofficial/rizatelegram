@@ -2225,7 +2225,17 @@ fun RegistrationTab(viewModel: BotViewModel) {
                                         .border(BorderStroke(1.dp, CyberSecondary.copy(alpha = 0.3f)), RoundedCornerShape(4.dp))
                                         .padding(horizontal = 8.dp, vertical = 4.dp)
                                 ) {
-                                    Text(user.selectedModel, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = CyberSecondary)
+                                    Text("${user.aiProvider} : ${user.selectedModel}", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = CyberSecondary)
+                                }
+                                if (user.customApiKey.isNotBlank()) {
+                                    Box(
+                                        modifier = Modifier
+                                            .background(CyberPrimary.copy(alpha = 0.15f), RoundedCornerShape(4.dp))
+                                            .border(BorderStroke(1.dp, CyberPrimary.copy(alpha = 0.3f)), RoundedCornerShape(4.dp))
+                                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                                    ) {
+                                        Text("🔑 Kustom Key", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = CyberPrimary)
+                                    }
                                 }
                                 Box(
                                     modifier = Modifier
@@ -2252,11 +2262,13 @@ fun RegistrationTab(viewModel: BotViewModel) {
                                             Berikut pengingat konfigurasi bot Anda:
                                             - Nama Bot: ${user.botFirstName}
                                             - Username: @${user.botUsername}
+                                            - Mesin AI: ${user.aiProvider}
                                             - AI Model: ${user.selectedModel}
+                                            - API Key: ${if (user.customApiKey.isNotBlank()) "Kustom Terpasang" else "Default Server"}
                                             - Paket Harga: Rp ${String.format("%,.0f", user.price).replace(",", ".")}
                                             - Status: ${if (user.isActive) "AKTIF (RUNNING)" else "NONAKTIF (STOPPED)"}
                                             
-                                            Ditenagai asisten AI Groq super cepat 24 jam non-stop!
+                                            Ditenagai asisten AI super cerdas 24 jam non-stop!
                                         """.trimIndent()
 
                                         if (settings.isWhatsappConnected) {
