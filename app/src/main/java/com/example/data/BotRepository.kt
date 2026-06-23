@@ -222,6 +222,28 @@ class BotRepository(private val botDao: BotDao) {
     }
 
     /**
+     * Sends a Photo message to Telegram chat using a photo URL.
+     */
+    suspend fun sendTelegramPhotoUrl(token: String, chatId: Long, photoUrl: String, caption: String? = null, replyToMessageId: Long? = null) = withContext(Dispatchers.IO) {
+        val url = "https://api.telegram.org/bot$token/sendPhoto"
+        val builder = MultipartBody.Builder()
+            .setType(MultipartBody.FORM)
+            .addFormDataPart("chat_id", chatId.toString())
+            .addFormDataPart("photo", photoUrl)
+        if (caption != null) {
+            builder.addFormDataPart("caption", caption)
+            builder.addFormDataPart("parse_mode", "Markdown")
+        }
+        if (replyToMessageId != null) {
+            builder.addFormDataPart("reply_to_message_id", replyToMessageId.toString())
+        }
+        val request = Request.Builder().url(url).post(builder.build()).build()
+        OkHttpClient().newCall(request).execute().use { response ->
+            if (!response.isSuccessful) throw Exception("Gagal mengirim foto ke Telegram: HTTP ${response.code}")
+        }
+    }
+
+    /**
      * Uploads and sends a Video/Animation message to Telegram chat.
      */
     suspend fun sendTelegramVideo(token: String, chatId: Long, file: File, caption: String? = null, replyToMessageId: Long? = null) = withContext(Dispatchers.IO) {

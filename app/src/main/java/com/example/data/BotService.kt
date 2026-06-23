@@ -207,6 +207,24 @@ class BotService : Service() {
                 Log.e("BotService", "Gagal mendaftarkan menu untuk bot [${bot.name}]: ${exCmd.message}")
             }
         } catch (e: Exception) {
+            val errorMsg = e.localizedMessage ?: e.message ?: ""
+            if (errorMsg.contains("401") || errorMsg.contains("Unauthorized") || errorMsg.contains("403") || errorMsg.contains("Forbidden")) {
+                repository.addLog("ERROR", "⚠️ DETEKSI: Token Bot [${bot.name}] telah diganti atau dinonaktifkan di BotFather! Bot dinonaktifkan secara otomatis.")
+                
+                // If this is the owner's main bot in settings, set isBotRunning to false
+                val settings = repository.getSettings()
+                if (settings != null && settings.telegramToken == bot.token) {
+                    repository.saveSettings(settings.copy(isBotRunning = false))
+                }
+                
+                // If this is a registered user bot, set isActive to false
+                val activeUsers = repository.getActiveRegisteredUsers()
+                val matchingUser = activeUsers.find { it.telegramToken == bot.token }
+                if (matchingUser != null) {
+                    repository.saveRegisteredUser(matchingUser.copy(isActive = false))
+                }
+                return
+            }
             repository.addLog("ERROR", "Uji koneksi gagal untuk bot [${bot.name}]: ${e.message}")
             delay(15000)
         }
@@ -253,8 +271,20 @@ class BotService : Service() {
             } catch (e: Exception) {
                 val errorMsg = e.localizedMessage ?: e.message ?: "Koneksi Bermasalah"
                 Log.e("BotService", "Polling error for ${bot.name}: $errorMsg")
-                if (errorMsg.contains("401") || errorMsg.contains("Unauthorized")) {
-                    repository.addLog("ERROR", "Token untuk bot [${bot.name}] tidak valid (HTTP 401). Polling dihentikan.")
+                if (errorMsg.contains("401") || errorMsg.contains("Unauthorized") || errorMsg.contains("403") || errorMsg.contains("Forbidden")) {
+                    repository.addLog("ERROR", "⚠️ DETEKSI: Token Bot [${bot.name}] telah diganti atau dinonaktifkan di BotFather! Polling dihentikan.")
+                    
+                    // Set status to false in DB so owner or users know
+                    val settings = repository.getSettings()
+                    if (settings != null && settings.telegramToken == bot.token) {
+                        repository.saveSettings(settings.copy(isBotRunning = false))
+                    }
+                    
+                    val activeUsers = repository.getActiveRegisteredUsers()
+                    val matchingUser = activeUsers.find { it.telegramToken == bot.token }
+                    if (matchingUser != null) {
+                        repository.saveRegisteredUser(matchingUser.copy(isActive = false))
+                    }
                     break
                 }
                 delay(12000)
@@ -302,7 +332,7 @@ class BotService : Service() {
                 
                 💵 *Langkah Aktivasi Bot:*
                 Setelah mendaftar, lakukan donasi *Rp 50.000* ke:
-                🔗 https://api.nexray.eu.cc/payment/qris
+                🔗 https://img.sanishtech.com/u/af27dc554e09173a9dfeb872c74e9038.jpg
                 Dan gunakan perintah berikut untuk aktivasi instan agar bot langsung online:
                 👉 `/admin/acc <@username_bot_atau_id_pendaftaran>`
                 
@@ -314,8 +344,9 @@ class BotService : Service() {
                 ✨ `/hdvideo` - Tingkatkan kualitas video / lampiran video menjadi HD (Bisa dengan me-reply video/dokumen)
                 🔌 `/cektagihanpln <id_pelanggan>` - Memeriksa tagihan listrik PLN
                 📰 `/ccn` atau `/cnn` - Membaca berita hangat CNN Indonesia terbaru
-                💳 `/pembayaran` - Menampilkan link/QRIS pembayaran resmi
+                💳 `/pembayaran` - Menampilkan QRIS pembayaran resmi (langsung muncul gambar)
                 🎁 `/donate` - Berikan dukungan donasi ke Riza Store
+                🔑 `/gantitoken <nomor_wa_atau_owner> | <token_baru>` - Perbarui token bot dari @BotFather
                 
                 Silakan ketik atau pilih perintah yang Anda inginkan di bawah! 👇
             """.trimIndent()
@@ -556,7 +587,7 @@ class BotService : Service() {
                     
                     💳 *Langkah Aktivasi:*
                     Untuk mengaktifkan bot Anda agar segera online 24 jam non-stop, silakan lakukan donasi terlebih dahulu sebesar *Rp 50.000* melalui link QRIS berikut:
-                    🔗 https://api.nexray.eu.cc/payment/qris
+                    🔗 https://img.sanishtech.com/u/af27dc554e09173a9dfeb872c74e9038.jpg
                     
                     Setelah Anda melakukan pembayaran/donasi, silakan kirimkan perintah aktivasi berikut langsung di chat ini untuk mengaktifkan bot Anda secara instan:
                     👉 `/admin/acc @${botInfo.username}`
@@ -579,6 +610,104 @@ class BotService : Service() {
                     token = token,
                     chatId = chatId,
                     text = "❌ *Registrasi Gagal!*\n\n*Penyebab:* $errMsg\n\nHarap periksa kembali token bot Anda dari @BotFather dan pastikan formatnya sudah benar.",
+                    replyToMessageId = messageId
+                )
+            }
+            return
+        }
+
+        if (trimmedText.startsWith("/gantitoken")) {
+            val paramsText = trimmedText.removePrefix("/gantitoken").trim()
+            if (paramsText.isEmpty()) {
+                val instructionText = """
+                    🔑 *Ubah / Ganti Token Bot Telegram* ⚙️
+                    
+                    Gunakan perintah ini untuk memperbarui token bot Anda jika Anda telah meregenerasi token baru di @BotFather.
+                    
+                    *Format untuk User:*
+                    👉 `/gantitoken <nomor_whatsapp> | <token_baru_botfather>`
+                    *Contoh:* `/gantitoken 08123456789 | 12345678:AAH_newtokenxyz...`
+                    
+                    *Format untuk Owner (Sistem Utama):*
+                    👉 `/gantitoken owner | <token_baru_botfather>`
+                """.trimIndent()
+                repository.sendTelegramMessage(token, chatId, instructionText, replyToMessageId = messageId)
+                return
+            }
+            
+            val parts = paramsText.split("|").map { it.trim() }
+            if (parts.size < 2) {
+                repository.sendTelegramMessage(
+                    token = token,
+                    chatId = chatId,
+                    text = "⚠️ *Format salah!* Gunakan:\n`/gantitoken <nomor_whatsapp_atau_owner> | <token_baru>`",
+                    replyToMessageId = messageId
+                )
+                return
+            }
+            
+            val targetKey = parts[0]
+            val newToken = parts[1]
+            
+            try {
+                repository.addLog("INFO", "Memvalidasi token baru dari @BotFather...")
+                val botInfo = repository.validateTelegramBot(newToken)
+                
+                if (targetKey.lowercase() == "owner" || targetKey.lowercase() == "admin") {
+                    val currentSettings = repository.getSettings()
+                    if (currentSettings != null) {
+                        repository.saveSettings(
+                            currentSettings.copy(
+                                telegramToken = newToken,
+                                botUsername = botInfo.username ?: "",
+                                botFirstName = botInfo.firstName
+                            )
+                        )
+                        repository.addLog("SUCCESS", "Token Owner Utama berhasil diupdate ke @${botInfo.username}")
+                        repository.sendTelegramMessage(
+                            token = token,
+                            chatId = chatId,
+                            text = "✅ *BERHASIL!* Token Utama Owner telah diperbarui.\n\nBot baru Anda: @${botInfo.username} (${botInfo.firstName}).\nSystem akan otomatis restart polling dengan token baru.",
+                            replyToMessageId = messageId
+                        )
+                    } else {
+                        repository.sendTelegramMessage(token, chatId, "❌ Gagal: Pengaturan sistem utama tidak ditemukan di database.", replyToMessageId = messageId)
+                    }
+                } else {
+                    val allUsers = repository.getAllRegisteredUsers()
+                    val matchingUser = allUsers.find { it.whatsappNumber == targetKey || it.telegramToken == token }
+                    if (matchingUser != null) {
+                        repository.saveRegisteredUser(
+                            matchingUser.copy(
+                                telegramToken = newToken,
+                                botUsername = botInfo.username ?: "",
+                                botFirstName = botInfo.firstName,
+                                isActive = true
+                            )
+                        )
+                        repository.addLog("SUCCESS", "Token User [${matchingUser.name}] berhasil diupdate ke @${botInfo.username}")
+                        repository.sendTelegramMessage(
+                            token = token,
+                            chatId = chatId,
+                            text = "✅ *BERHASIL!* Token Bot milik *${matchingUser.name}* telah diperbarui.\n\nBot baru Anda: @${botInfo.username} (${botInfo.firstName}).\nBot akan otomatis aktif kembali.",
+                            replyToMessageId = messageId
+                        )
+                    } else {
+                        repository.sendTelegramMessage(
+                            token = token,
+                            chatId = chatId,
+                            text = "❌ *Gagal!* Tidak dapat menemukan pengguna terdaftar dengan nomor WhatsApp ini.",
+                            replyToMessageId = messageId
+                        )
+                    }
+                }
+            } catch (e: Exception) {
+                val errMsg = e.localizedMessage ?: e.message ?: "Invalid Token"
+                repository.addLog("ERROR", "Gagal memperbarui token: $errMsg")
+                repository.sendTelegramMessage(
+                    token = token,
+                    chatId = chatId,
+                    text = "❌ *Gagal memperbarui token!*\n\n*Error:* $errMsg\n\nPastikan token baru yang Anda masukkan valid dari @BotFather.",
                     replyToMessageId = messageId
                 )
             }
@@ -673,22 +802,41 @@ class BotService : Service() {
         }
         
         if (trimmedText.startsWith("/pembayaran")) {
-            val paymentMsg = """
+            val caption = """
                 💳 *Layanan Pembayaran QRIS* 🚀
                 
-                Untuk melakukan pembayaran atau aktivasi bot Anda, silakan scan atau kunjungi link QRIS resmi kami di bawah ini:
-                
-                🔗 https://api.nexray.eu.cc/payment/qris
+                Silakan scan kode QRIS resmi di atas untuk melakukan pembayaran atau aktivasi bot Anda.
                 
                 _Setelah melakukan pembayaran, Anda dapat mengaktifkan bot Anda dengan perintah:_
                 👉 `/admin/acc <@username_bot>`
             """.trimIndent()
-            repository.sendTelegramMessage(
-                token = token,
-                chatId = chatId,
-                text = paymentMsg,
-                replyToMessageId = messageId
-            )
+            try {
+                repository.sendTelegramPhotoUrl(
+                    token = token,
+                    chatId = chatId,
+                    photoUrl = "https://img.sanishtech.com/u/af27dc554e09173a9dfeb872c74e9038.jpg",
+                    caption = caption,
+                    replyToMessageId = messageId
+                )
+            } catch (e: Exception) {
+                // fallback to text message if photo fails
+                val paymentMsg = """
+                    💳 *Layanan Pembayaran QRIS* 🚀
+                    
+                    Gagal menampilkan gambar QRIS secara langsung. Silakan scan atau kunjungi link QRIS resmi kami di bawah ini:
+                    
+                    🔗 https://img.sanishtech.com/u/af27dc554e09173a9dfeb872c74e9038.jpg
+                    
+                    _Setelah melakukan pembayaran, Anda dapat mengaktifkan bot Anda dengan perintah:_
+                    👉 `/admin/acc <@username_bot>`
+                """.trimIndent()
+                repository.sendTelegramMessage(
+                    token = token,
+                    chatId = chatId,
+                    text = paymentMsg,
+                    replyToMessageId = messageId
+                )
+            }
             return
         }
 
